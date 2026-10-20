@@ -42,8 +42,11 @@ OPTION(USE_SDL2 "Use SDL2 instead of SDL1.2" ON)
 
 add_subdirectory(../dependencies/OALWrapper OALWrapper)
 
+OPTION(HPL2_WITH_FBX "Build the FBX mesh loader (needs the discontinued FBX SDK 2012)" OFF)
+
 SET(HPL2_DEFINES
     PUBLIC $<$<BOOL:${USE_SDL2}>:USE_SDL2>
+    PUBLIC $<$<BOOL:${HPL2_WITH_FBX}>:HPL2_WITH_FBX>
 )
 
 add_definitions(
@@ -151,8 +154,11 @@ file(GLOB impl_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     sources/impl/MeshLoaderColladaHelpers.cpp
     sources/impl/MeshLoaderColladaLoader.cpp
     sources/impl/MeshLoaderMSH.cpp
-    sources/impl/MeshLoaderFBX.cpp
 )
+
+IF(HPL2_WITH_FBX)
+    LIST(APPEND impl_sources sources/impl/MeshLoaderFBX.cpp)
+ENDIF()
 
 IF(APPLE)
     LIST(APPEND impl_sources
@@ -239,7 +245,9 @@ source_group("Platform" REGULAR_EXPRESSION "\\/impl\\/Platform.+")
 
 FindPrebuiltLibrary(NEWTON_LIBRARY Newton)
 FindPrebuiltLibrary(ANGELSCRIPT_LIBRARY angelscript)
-FindPrebuiltLibrary(FBX_LIBRARY fbxsdk-2012.2-static)
+IF(HPL2_WITH_FBX)
+    FindPrebuiltLibrary(FBX_LIBRARY fbxsdk-2012.2-static)
+ENDIF()
 FindPrebuiltLibrary(GLEW_LIBRARY GLEW)
 FindPrebuiltLibrary(THEORA_LIBRARY theora)
 FindPrebuiltLibrary(DEVIL_LIBRARY IL)

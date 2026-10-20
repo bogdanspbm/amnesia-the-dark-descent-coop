@@ -19,7 +19,9 @@
 
 #include "impl/LowLevelResourcesSDL.h"
 #include "impl/MeshLoaderMSH.h"
+#ifdef HPL2_WITH_FBX
 #include "impl/MeshLoaderFBX.h"
+#endif
 #include "impl/MeshLoaderCollada.h"
 #include "impl/VideoStreamTheora.h"
 #include "impl/XmlDocumentTiny.h"
@@ -73,7 +75,9 @@ namespace hpl {
 		cMeshLoaderMSH *pLoaderMSH = hplNew( cMeshLoaderMSH,(mpLowLevelGraphics));
 		apHandler->AddLoader(pLoaderMSH);
 		apHandler->AddLoader(hplNew( cMeshLoaderCollada,(mpLowLevelGraphics, pLoaderMSH, true)));
+#ifdef HPL2_WITH_FBX
 		apHandler->AddLoader(hplNew( cMeshLoaderFBX,(mpLowLevelGraphics, pLoaderMSH, true)));
+#endif
 	}
 
 	//-----------------------------------------------------------------------
