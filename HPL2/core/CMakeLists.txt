@@ -352,7 +352,9 @@ FUNCTION(AddTestTarget target_name)
     )
 ENDFUNCTION()
 
-add_subdirectory(../tests tests)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../tests/CMakeLists.txt)
+    add_subdirectory(../tests tests)
+endif()
 add_subdirectory(../tools tools)
 
 

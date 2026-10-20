@@ -348,3 +348,5 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+HPL2/core/sources/BuildID_HPL2_0_*.cpp
+HPL2/dependencies/

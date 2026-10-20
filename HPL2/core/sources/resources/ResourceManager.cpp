@@ -87,7 +87,7 @@ namespace hpl {
 	class cSortResources
 	{
 	public:
-		bool operator()(iResourceBase* apResourceA, iResourceBase* apResourceB)
+		bool operator()(iResourceBase* apResourceA, iResourceBase* apResourceB) const
 		{
 			if(apResourceA->GetUserCount() != apResourceB->GetUserCount())
 			{
