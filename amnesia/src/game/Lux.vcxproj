@@ -68,7 +68,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;..\coop\enet\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;MEMORY_MANAGER_ACTIVE;USE_SDL2;USE_GAMEPAD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>
@@ -78,7 +78,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>HPL2_2010_Debug.lib;fltk.lib;wsock32.lib;comctl32.lib;xinput.lib;zlibwapi.lib;dbghelp.lib;Wininet.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>HPL2_2010_Debug.lib;fltk.lib;wsock32.lib;ws2_32.lib;winmm.lib;comctl32.lib;xinput.lib;zlibwapi.lib;dbghelp.lib;Wininet.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\..\HPL2\lib; ..\..\..\HPL2\dependencies\lib\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -92,7 +92,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <Optimization>MinSpace</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;..\coop\enet\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;USE_GAMEPAD;USE_SDL2;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>
@@ -102,7 +102,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>HPL2_2010.lib;fltk.lib;wsock32.lib;comctl32.lib;zlibwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>HPL2_2010.lib;fltk.lib;wsock32.lib;ws2_32.lib;winmm.lib;comctl32.lib;zlibwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\..\HPL2\lib; ..\..\..\HPL2\dependencies\lib\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -116,7 +116,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Demo|Win32'">
     <ClCompile>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;..\coop\enet\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS; LUX_DEMO_VERSION;USE_GAMEPAD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PrecompiledHeader>
@@ -126,7 +126,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>HPL2_2010.lib;fltk.lib;wsock32.lib;comctl32.lib;zlibwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>HPL2_2010.lib;fltk.lib;wsock32.lib;ws2_32.lib;winmm.lib;comctl32.lib;zlibwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\..\HPL2\lib; ..\..\..\HPL2\dependencies\lib\win32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreEmbeddedIDL>false</IgnoreEmbeddedIDL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -197,6 +197,16 @@
     <ClCompile Include="LuxEffectRenderer.cpp" />
     <ClCompile Include="LuxGlobalDataHandler.cpp" />
     <ClCompile Include="LuxHintHandler.cpp" />
+    <ClCompile Include="LuxCoopNet.cpp" />
+    <ClCompile Include="..\coop\enet\callbacks.c" />
+    <ClCompile Include="..\coop\enet\compress.c" />
+    <ClCompile Include="..\coop\enet\host.c" />
+    <ClCompile Include="..\coop\enet\list.c" />
+    <ClCompile Include="..\coop\enet\packet.c" />
+    <ClCompile Include="..\coop\enet\peer.c" />
+    <ClCompile Include="..\coop\enet\protocol.c" />
+    <ClCompile Include="..\coop\enet\unix.c" />
+    <ClCompile Include="..\coop\enet\win32.c" />
     <ClCompile Include="LuxInputHandler.cpp" />
     <ClCompile Include="LuxInsanityHandler.cpp" />
     <ClCompile Include="LuxInventory.cpp" />
@@ -306,6 +316,7 @@
     <ClInclude Include="LuxEffectRenderer.h" />
     <ClInclude Include="LuxGlobalDataHandler.h" />
     <ClInclude Include="LuxHintHandler.h" />
+    <ClInclude Include="LuxCoopNet.h" />
     <ClInclude Include="LuxInputHandler.h" />
     <ClInclude Include="LuxInsanityHandler.h" />
     <ClInclude Include="LuxInventory.h" />

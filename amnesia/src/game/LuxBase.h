@@ -49,6 +49,7 @@ class cLuxConfigHandler;
 class cLuxPostEffectHandler;
 class cLuxInsanityHandler;
 class cLuxProgressLogHandler;
+class cLuxCoopNet;
 class cLuxLoadScreenHandler;
 class iLuxAchievementHandler;
 
@@ -237,6 +238,7 @@ public:
 	cLuxPostEffectHandler *mpPostEffectHandler;
 	cLuxInsanityHandler *mpInsanityHandler;
 	cLuxProgressLogHandler *mpProgressLogHandler;
+	cLuxCoopNet *mpCoopNet;
 	cLuxLoadScreenHandler *mpLoadScreenHandler;
 	cLuxCredits *mpCredits;
 	cLuxDemoEnd* mpDemoEnd;

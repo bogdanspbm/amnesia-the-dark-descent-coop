@@ -41,6 +41,7 @@
 #include "LuxPostEffects.h"
 #include "LuxInsanityHandler.h"
 #include "LuxProgressLogHandler.h"
+#include "LuxCoopNet.h"
 #include "LuxLoadScreenHandler.h"
 
 #include "LuxInventory.h"
@@ -1293,6 +1294,7 @@ bool cLuxBase::InitGame()
 	mpSaveHandler = CreateGlobalModule( cLuxSaveHandler);
 	mpScriptHandler = CreateGlobalModule( cLuxScriptHandler);
 	mpProgressLogHandler = CreateGlobalModule( cLuxProgressLogHandler);
+	mpCoopNet = CreateGlobalModule( cLuxCoopNet);
 	
 	//Default
 	mpMapHandler = CreateModule( cLuxMapHandler, "Default");

@@ -1,0 +1,7 @@
+<!-- Copy next to Amnesia_coop.exe as coop.cfg.
+     Host: Mode="host". Partner: Mode="client" and Address = host's IP (LAN, Radmin VPN or ZeroTier).
+     The host must allow UDP port 27960 through the firewall. -->
+<Coop>
+	<Network Mode="host" Address="127.0.0.1" Port="27960" StateRate="20" />
+	<Player Name="Player" AvatarMesh="servant_grunt.dae" />
+</Coop>
