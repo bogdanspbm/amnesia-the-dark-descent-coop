@@ -284,6 +284,8 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mfReconnectCount = 0;
 	mfBodySendCount = 0;
 	mfTime = 0;
+	mbSleepOverridden = false;
+	mbSleepWhenOutOfFocus = true;
 }
 
 //-----------------------------------------------------------------------
@@ -327,6 +329,14 @@ void cLuxCoopNet::LoadMainConfig()
 	hplDelete(pCfg);
 
 	Log("Coop: mode '%s', address %s:%d, name '%s'\n", sMode.c_str(), msAddress.c_str(), mlPort, msName.c_str());
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::SaveMainConfig()
+{
+	//Keep the user's own setting in the config, not the co-op override
+	if(mbSleepOverridden) gpBase->mpMainConfig->SetBool("Engine","SleepWhenOutOfFocus", mbSleepWhenOutOfFocus);
 }
 
 //-----------------------------------------------------------------------
@@ -489,6 +499,14 @@ bool cLuxCoopNet::StartNetwork()
 	}
 	mbEnetInitialized = true;
 
+	//An unfocused window would sleep without updating, so the partner times out
+	if(mbSleepOverridden==false)
+	{
+		mbSleepWhenOutOfFocus = gpBase->mpEngine->GetWaitIfAppOutOfFocus();
+		gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
+		mbSleepOverridden = true;
+	}
+
 	if(mMode == eLuxCoopMode_Host)
 	{
 		ENetAddress address;
@@ -537,6 +555,11 @@ void cLuxCoopNet::StopNetwork()
 	{
 		enet_deinitialize();
 		mbEnetInitialized = false;
+	}
+	if(mbSleepOverridden)
+	{
+		gpBase->mpEngine->SetWaitIfAppOutOfFocus(mbSleepWhenOutOfFocus);
+		mbSleepOverridden = false;
 	}
 	mbHandshakeDone = false;
 }

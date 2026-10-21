@@ -149,6 +149,7 @@ public:
 	~cLuxCoopNet();
 
 	void LoadMainConfig();
+	void SaveMainConfig();
 
 	void OnStart();
 	void Update(float afTimeStep);
@@ -222,6 +223,8 @@ private:
 	float mfReconnectCount;
 	float mfBodySendCount;
 	float mfTime;
+	bool mbSleepOverridden;
+	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;
 	std::map<int, float> m_mapClientOwnedBodies;
 
