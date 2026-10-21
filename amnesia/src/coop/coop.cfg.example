@@ -2,7 +2,9 @@
      Host: Mode="host". Partner: Mode="client" and Address = host's IP (LAN, Radmin VPN or ZeroTier).
      The host must allow UDP port 27960 through the firewall.
      Sections are top-level elements (like the game's own .cfg files); don't wrap them in a root element. -->
-<Network Mode="host" Address="127.0.0.1" Port="27960" StateRate="20" />
+<!-- Transport: "steam" (lobbies through Steam, no IP or open ports) or "direct" (by IP).
+     Steam needs Steam running and the Steamworks SDK's steam_api.dll in SteamDir; SteamAppId 480 is Valve's Spacewar test app. -->
+<Network Mode="host" Address="127.0.0.1" Port="27960" StateRate="20" Transport="direct" SteamAppId="480" SteamDir="_coop/steam" />
 <!-- AvatarModel: an .ent (mesh plus animations) or a bare mesh. The default coop_partner.ent is the mod's own model
        in AvatarDir (default _coop/partner); without it the partner falls back to alexander.ent. Animations are found by name:
        Idle Walk Run CrouchIdle CrouchWalk, the same with a Lantern suffix (IdleLantern ...), Hurt Downed Death.

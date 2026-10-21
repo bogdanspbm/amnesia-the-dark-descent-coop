@@ -26,8 +26,10 @@
 
 //----------------------------------------------
 
+static const int kCoopLobbyListSize = 5;
+
 /**
- * Co-op lobby: host a game or join one by address, then the host starts it for both.
+ * Co-op lobby: host or find a game through Steam, or connect by IP, then the host starts it for both.
  */
 class cLuxMainMenu_Coop : public iLuxMainMenuWindow
 {
@@ -43,6 +45,7 @@ private:
 	virtual void OnSetActive(bool abX);
 
 	void UpdateStatus();
+	void UpdateLobbyList();
 	tString GetEnteredName();
 	int GetEnteredPort();
 
@@ -62,6 +65,14 @@ private:
 	cWidgetButton *mpLeaveButton;
 	cWidgetButton *mpStartButton;
 
+	cWidgetButton *mpSteamPublicButton;
+	cWidgetButton *mpSteamFriendsButton;
+	cWidgetButton *mpSteamFindButton;
+	cWidgetButton *mpSteamInviteButton;
+	cWidgetButton *mpLobbyButtons[kCoopLobbyListSize];
+	tString msLobbyIds[kCoopLobbyListSize];
+	bool mbSearched;
+
 	////////////////////////
 	// Callbacks
 	bool WindowOnUpdate(iWidget* apWidget, const cGuiMessageData& aData);
@@ -75,6 +86,21 @@ private:
 
 	bool PressLeave(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressLeave);
+
+	bool PressSteamPublic(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressSteamPublic);
+
+	bool PressSteamFriends(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressSteamFriends);
+
+	bool PressSteamFind(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressSteamFind);
+
+	bool PressSteamInvite(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressSteamInvite);
+
+	bool PressLobby(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressLobby);
 
 	bool PressStart(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressStart);

@@ -36,20 +36,18 @@
 #include "LuxHelpFuncs.h"
 #include "LuxEnemy.h"
 #include "LuxPlayerHelpers.h"
+#include "LuxCoopTransport_ENet.h"
+#include "LuxCoopTransport_Steam.h"
 
-#include <enet/enet.h>
 #include <string.h>
 #include <algorithm>
 
-//enet pulls in windows.h, whose PlaySound macro renames iLuxEnemy::PlaySound
-#undef PlaySound
 #include <stdlib.h>
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTANTS
 //////////////////////////////////////////////////////////////////////////
 
-static const int kCoopProtocolVersion = 5;
 static const int kCoopChannel_Reliable = 0;
 static const int kCoopChannel_State = 1;
 static const int kCoopChannelNum = 2;
@@ -606,12 +604,14 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mfLastHealth = -1;
 	mfStateSendInterval = 1.0f / 20.0f;
 
-	mpHost = NULL;
-	mpPeer = NULL;
-	mbEnetInitialized = false;
+	mNetType = eLuxCoopNetType_Direct;
+	mpTransport = NULL;
+	mpENet = NULL;
+	mpSteam = NULL;
+	mlSteamAppId = 480;
+	msSteamDir = "_coop/steam";
 	mbHandshakeDone = false;
 	mfStateSendCount = 0;
-	mfReconnectCount = 0;
 	mfBodySendCount = 0;
 	mfPropNameHashTime = -1000.0f;
 	mfTime = 0;
@@ -641,6 +641,8 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 cLuxCoopNet::~cLuxCoopNet()
 {
 	StopNetwork();
+	if(mpENet) hplDelete(mpENet);
+	if(mpSteam) hplDelete(mpSteam);
 }
 
 //-----------------------------------------------------------------------
@@ -668,6 +670,10 @@ void cLuxCoopNet::LoadMainConfig()
 
 	msAddress = pCfg->GetString("Network", "Address", "127.0.0.1");
 	mlPort = pCfg->GetInt("Network", "Port", 27960);
+	mNetType = cString::ToLowerCase(pCfg->GetString("Network", "Transport", "direct")) == "steam" ? eLuxCoopNetType_Steam : eLuxCoopNetType_Direct;
+	mlSteamAppId = pCfg->GetInt("Network", "SteamAppId", mlSteamAppId);
+	msSteamDir = pCfg->GetString("Network", "SteamDir", msSteamDir);
+	msSteamLobby = pCfg->GetString("Network", "SteamLobby", "");
 	msName = pCfg->GetString("Player", "Name", "Player");
 	mAvatarSettings.msModel = pCfg->GetString("Player", "AvatarModel", mAvatarSettings.msModel);
 	mAvatarSettings.msModelDir = pCfg->GetString("Player", "AvatarDir", mAvatarSettings.msModelDir);
@@ -915,6 +921,8 @@ bool cLuxCoopNet::Host(const tString& asName, int alPort)
 	msName = asName;
 	mlPort = alPort;
 	mMode = eLuxCoopMode_Host;
+	mNetType = eLuxCoopNetType_Direct;
+	if(mpENet){ hplDelete(mpENet); mpENet = NULL; }	//The port may have changed
 	SaveLobbySettings();
 	return StartNetwork();
 }
@@ -926,8 +934,49 @@ bool cLuxCoopNet::Join(const tString& asName, const tString& asAddress, int alPo
 	msAddress = asAddress;
 	mlPort = alPort;
 	mMode = eLuxCoopMode_Client;
+	mNetType = eLuxCoopNetType_Direct;
+	if(mpENet){ hplDelete(mpENet); mpENet = NULL; }
 	SaveLobbySettings();
 	return StartNetwork();
+}
+
+bool cLuxCoopNet::HostSteam(const tString& asName, bool abPublic)
+{
+	StopNetwork();
+	if(SteamAvailable()==false) return false;
+
+	msName = asName;
+	mMode = eLuxCoopMode_Host;
+	mNetType = eLuxCoopNetType_Steam;
+	mpSteam->SetPublicLobby(abPublic);
+	SaveLobbySettings();
+	return StartNetwork();
+}
+
+bool cLuxCoopNet::JoinSteamLobby(const tString& asName, const tString& asLobbyId)
+{
+	StopNetwork();
+	if(SteamAvailable()==false) return false;
+
+	msName = asName;
+	msSteamLobby = asLobbyId;
+	mMode = eLuxCoopMode_Client;
+	mNetType = eLuxCoopNetType_Steam;
+	SaveLobbySettings();
+	return StartNetwork();
+}
+
+bool cLuxCoopNet::SteamAvailable()
+{
+	if(mpSteam==NULL) mpSteam = hplNew(cLuxCoopTransport_Steam, (mlSteamAppId, msSteamDir));
+	return mpSteam->Init();
+}
+
+tString cLuxCoopNet::GetTransportStatus()
+{
+	if(mpTransport) return mpTransport->GetStatus();
+	if(mpSteam && mpSteam->GetInitError() != "") return mpSteam->GetInitError();
+	return "";
 }
 
 void cLuxCoopNet::Leave()
@@ -949,7 +998,7 @@ void cLuxCoopNet::StartCoopGame()
 	buffer.AddByte(eLuxCoopMsg_StartGame);
 	buffer.AddByte(gpBase->mbHardMode ? 1 : 0);
 	Send(buffer, kCoopChannel_Reliable, true);
-	enet_host_flush(mpHost);
+	mpTransport->Flush();
 
 	StartLocalGame();
 }
@@ -965,25 +1014,19 @@ void cLuxCoopNet::OnStart()
 
 void cLuxCoopNet::Update(float afTimeStep)
 {
-	if(mpHost==NULL) return;
+	//Steam runs even while not connected, for lobby lists and invites from the overlay
+	if(mpSteam)
+	{
+		mpSteam->RunCallbacks();
+		tString sJoinLobby = mpSteam->TakeJoinRequest();
+		if(sJoinLobby != "" && gpBase->mpMapHandler->MapIsLoaded()==false)
+			JoinSteamLobby(msName, sJoinLobby);
+	}
+
+	if(mpTransport==NULL) return;
 
 	mfTime += afTimeStep;
-	PollEvents();
-
-	//Client keeps trying to reach the host until it answers
-	if(mMode == eLuxCoopMode_Client && mpPeer==NULL)
-	{
-		mfReconnectCount -= afTimeStep;
-		if(mfReconnectCount <= 0)
-		{
-			mfReconnectCount = 3.0f;
-			ENetAddress address;
-			enet_address_set_host(&address, msAddress.c_str());
-			address.port = (enet_uint16)mlPort;
-			mpPeer = enet_host_connect(mpHost, &address, kCoopChannelNum, 0);
-			if(mpPeer==NULL) Error("Coop: could not create connection to %s:%d\n", msAddress.c_str(), mlPort);
-		}
-	}
+	mpTransport->Update(afTimeStep, this);
 
 	if(IsConnected())
 	{
@@ -1022,7 +1065,7 @@ void cLuxCoopNet::Update(float afTimeStep)
 
 	mAvatar.Update(afTimeStep);
 
-	enet_host_flush(mpHost);
+	if(mpTransport) mpTransport->Flush();
 }
 
 //-----------------------------------------------------------------------
@@ -1091,13 +1134,33 @@ void cLuxCoopNet::CreateAvatar(cLuxMap *apMap)
 
 bool cLuxCoopNet::StartNetwork()
 {
-	if(enet_initialize() != 0)
+	StopNetwork();
+
+	if(mNetType == eLuxCoopNetType_Steam)
 	{
-		Error("Coop: could not initialize ENet\n");
+		if(SteamAvailable()==false)
+		{
+			mMode = eLuxCoopMode_Off;
+			return false;
+		}
+		mpTransport = mpSteam;
+	}
+	else
+	{
+		if(mpENet==NULL) mpENet = hplNew(cLuxCoopTransport_ENet, (mlPort, kCoopChannelNum));
+		mpTransport = mpENet;
+	}
+
+	bool bStarted = false;
+	if(mMode == eLuxCoopMode_Host)	bStarted = mpTransport->StartHost();
+	else							bStarted = mpTransport->StartClient(mNetType == eLuxCoopNetType_Steam ? msSteamLobby : msAddress);
+	if(bStarted==false)
+	{
+		mpTransport->Stop();
+		mpTransport = NULL;
 		mMode = eLuxCoopMode_Off;
 		return false;
 	}
-	mbEnetInitialized = true;
 
 	//An unfocused window would sleep without updating, so the partner times out
 	if(mbSleepOverridden==false)
@@ -1107,33 +1170,6 @@ bool cLuxCoopNet::StartNetwork()
 		mbSleepOverridden = true;
 	}
 
-	if(mMode == eLuxCoopMode_Host)
-	{
-		ENetAddress address;
-		address.host = ENET_HOST_ANY;
-		address.port = (enet_uint16)mlPort;
-		mpHost = enet_host_create(&address, 1, kCoopChannelNum, 0, 0);
-		if(mpHost==NULL)
-		{
-			Error("Coop: could not listen on port %d\n", mlPort);
-			mMode = eLuxCoopMode_Off;
-			return false;
-		}
-		Log("Coop: hosting on port %d\n", mlPort);
-	}
-	else
-	{
-		mpHost = enet_host_create(NULL, 1, kCoopChannelNum, 0, 0);
-		if(mpHost==NULL)
-		{
-			Error("Coop: could not create client host\n");
-			mMode = eLuxCoopMode_Off;
-			return false;
-		}
-		mfReconnectCount = 0;
-		Log("Coop: connecting to %s:%d\n", msAddress.c_str(), mlPort);
-	}
-
 	return true;
 }
 
@@ -1141,20 +1177,10 @@ bool cLuxCoopNet::StartNetwork()
 
 void cLuxCoopNet::StopNetwork()
 {
-	if(mpPeer)
+	if(mpTransport)
 	{
-		enet_peer_disconnect_now(mpPeer, 0);
-		mpPeer = NULL;
-	}
-	if(mpHost)
-	{
-		enet_host_destroy(mpHost);
-		mpHost = NULL;
-	}
-	if(mbEnetInitialized)
-	{
-		enet_deinitialize();
-		mbEnetInitialized = false;
+		mpTransport->Stop();
+		mpTransport = NULL;
 	}
 	if(mbSleepOverridden)
 	{
@@ -1166,55 +1192,39 @@ void cLuxCoopNet::StopNetwork()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopNet::PollEvents()
+bool cLuxCoopNet::IsConnected()
 {
-	ENetEvent event;
-	while(mpHost && enet_host_service(mpHost, &event, 0) > 0)
-	{
-		switch(event.type)
-		{
-		case ENET_EVENT_TYPE_CONNECT:
-			//Only one partner; a second connection on the host is refused
-			if(mpPeer && mpPeer != event.peer)
-			{
-				enet_peer_disconnect(event.peer, 0);
-				break;
-			}
-			mpPeer = event.peer;
-			mbHandshakeDone = false;
-			Log("Coop: connected\n");
-			SendHello();
-			break;
-
-		case ENET_EVENT_TYPE_RECEIVE:
-			if(event.peer == mpPeer) HandlePacket(event.packet);
-			enet_packet_destroy(event.packet);
-			break;
-
-		case ENET_EVENT_TYPE_DISCONNECT:
-			if(event.peer == mpPeer)
-			{
-				Log("Coop: partner '%s' disconnected\n", msPartnerName.c_str());
-				mpPeer = NULL;
-				mbHandshakeDone = false;
-				mfReconnectCount = 3.0f;
-				msPartnerName = "";
-				msPartnerMap = "";
-				mAvatar.SetTarget(0, 0, false, false);
-			}
-			break;
-
-		default:
-			break;
-		}
-	}
+	return mpTransport && mpTransport->HasPeer() && mbHandshakeDone;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
+void cLuxCoopNet::OnTransportConnected()
 {
-	cLuxCoopBuffer buffer(apPacket->data, apPacket->dataLength);
+	mbHandshakeDone = false;
+	Log("Coop: connected\n");
+	SendHello();
+}
+
+void cLuxCoopNet::OnTransportDisconnected()
+{
+	Log("Coop: partner '%s' disconnected\n", msPartnerName.c_str());
+	mbHandshakeDone = false;
+	msPartnerName = "";
+	msPartnerMap = "";
+	mAvatar.SetTarget(0, 0, false, false);
+}
+
+void cLuxCoopNet::OnTransportPacket(const unsigned char *apData, size_t alSize)
+{
+	cLuxCoopBuffer buffer(apData, alSize);
+	HandlePacket(buffer);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandlePacket(cLuxCoopBuffer &buffer)
+{
 	unsigned char lType = buffer.GetByte();
 
 	switch(lType)
@@ -1253,7 +1263,7 @@ void cLuxCoopNet::HandleHello(cLuxCoopBuffer &aBuffer)
 	if(lVersion != kCoopProtocolVersion)
 	{
 		Error("Coop: partner runs protocol %d, we run %d. Update both games to the same mod version.\n", lVersion, kCoopProtocolVersion);
-		enet_peer_disconnect(mpPeer, 0);
+		mpTransport->DisconnectPeer();
 		return;
 	}
 
@@ -1914,6 +1924,7 @@ void cLuxCoopNet::SaveLobbySettings()
 	pCfg->SetString("Player", "Name", msName);
 	pCfg->SetString("Network", "Address", msAddress);
 	pCfg->SetInt("Network", "Port", mlPort);
+	pCfg->SetString("Network", "Transport", mNetType == eLuxCoopNetType_Steam ? "steam" : "direct");
 	pCfg->Save();
 	hplDelete(pCfg);
 }
@@ -2314,10 +2325,8 @@ void cLuxCoopNet::SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEn
 
 void cLuxCoopNet::Send(const cLuxCoopBuffer &aBuffer, int alChannel, bool abReliable)
 {
-	if(mpPeer==NULL || aBuffer.GetSize()==0) return;
-
-	ENetPacket *pPacket = enet_packet_create(aBuffer.GetData(), aBuffer.GetSize(), abReliable ? ENET_PACKET_FLAG_RELIABLE : 0);
-	enet_peer_send(mpPeer, (enet_uint8)alChannel, pPacket);
+	if(mpTransport==NULL || mpTransport->HasPeer()==false || aBuffer.GetSize()==0) return;
+	mpTransport->Send(aBuffer.GetData(), aBuffer.GetSize(), alChannel, abReliable);
 }
 
 //-----------------------------------------------------------------------

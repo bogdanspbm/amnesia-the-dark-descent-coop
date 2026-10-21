@@ -20,6 +20,7 @@
 #include "LuxMainMenu_Coop.h"
 #include "LuxBase.h"
 #include "LuxCoopNet.h"
+#include "LuxCoopTransport_Steam.h"
 
 //-----------------------------------------------------------------------
 
@@ -40,7 +41,7 @@ static tWString CoopText(const tString& asEntry, const tString& asEnglish)
 
 cLuxMainMenu_Coop::cLuxMainMenu_Coop(cGuiSet *apGuiSet, cGuiSkin *apGuiSkin) : iLuxMainMenuWindow(apGuiSet, apGuiSkin)
 {
-	mvWindowSize = cVector2f(460, 300);
+	mvWindowSize = cVector2f(520, 520);
 
 	mpTextName = NULL;
 	mpTextAddress = NULL;
@@ -50,6 +51,12 @@ cLuxMainMenu_Coop::cLuxMainMenu_Coop(cGuiSet *apGuiSet, cGuiSkin *apGuiSkin) : i
 	mpJoinButton = NULL;
 	mpLeaveButton = NULL;
 	mpStartButton = NULL;
+	mpSteamPublicButton = NULL;
+	mpSteamFriendsButton = NULL;
+	mpSteamFindButton = NULL;
+	mpSteamInviteButton = NULL;
+	for(int i=0; i<kCoopLobbyListSize; ++i) mpLobbyButtons[i] = NULL;
+	mbSearched = false;
 }
 
 //-----------------------------------------------------------------------
@@ -79,6 +86,9 @@ void cLuxMainMenu_Coop::CreateGui()
 	float fLabelWidth = 130;
 	float fFieldWidth = mvWindowSize.x - fLabelWidth - fBorderSize*2;
 	float fRowHeight = 28;
+	float fButtonSepp = 6;
+	float fInnerWidth = mvWindowSize.x - fBorderSize*2;
+	float fHalfWidth = (fInnerWidth - fButtonSepp) / 2.0f;
 	cVector3f vPos(fBorderSize, 40, 0.1f);
 
 	//////////////////////////
@@ -86,38 +96,60 @@ void cLuxMainMenu_Coop::CreateGui()
 	mpGuiSet->CreateWidgetLabel(vPos, cVector2f(fLabelWidth, 20), CoopText("Name", "Your name"), mpWindow);
 	mpTextName = mpGuiSet->CreateWidgetTextBox(vPos + cVector3f(fLabelWidth,0,0), cVector2f(fFieldWidth, 20), cString::To16Char(pNet->GetName()), mpWindow);
 	mpTextName->SetMaxTextLength(24);
-	vPos.y += fRowHeight;
+	vPos.y += fRowHeight + 4;
 
 	//////////////////////////
-	//Address and port
+	//Steam: host, find, invite, and the lobbies found
+	mpGuiSet->CreateWidgetLabel(vPos, cVector2f(fInnerWidth, 20), CoopText("SteamHeader", "Steam"), mpWindow);
+	vPos.y += 22;
+
+	mpSteamPublicButton = mpGuiSet->CreateWidgetButton(vPos, cVector2f(fHalfWidth, 28), CoopText("SteamHostPublic", "Host public lobby"), mpWindow);
+	mpSteamPublicButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressSteamPublic));
+	mpSteamFriendsButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f(fHalfWidth + fButtonSepp,0,0), cVector2f(fHalfWidth, 28), CoopText("SteamHostFriends", "Host for friends"), mpWindow);
+	mpSteamFriendsButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressSteamFriends));
+	vPos.y += 28 + fButtonSepp;
+
+	mpSteamFindButton = mpGuiSet->CreateWidgetButton(vPos, cVector2f(fHalfWidth, 28), CoopText("SteamFind", "Find games"), mpWindow);
+	mpSteamFindButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressSteamFind));
+	mpSteamInviteButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f(fHalfWidth + fButtonSepp,0,0), cVector2f(fHalfWidth, 28), CoopText("SteamInvite", "Invite friend"), mpWindow);
+	mpSteamInviteButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressSteamInvite));
+	vPos.y += 28 + fButtonSepp;
+
+	for(int i=0; i<kCoopLobbyListSize; ++i)
+	{
+		mpLobbyButtons[i] = mpGuiSet->CreateWidgetButton(vPos, cVector2f(fInnerWidth, 22), _W(""), mpWindow);
+		mpLobbyButtons[i]->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressLobby));
+		mpLobbyButtons[i]->SetVisible(false);
+		vPos.y += 22 + 3;
+	}
+	vPos.y += 6;
+
+	//////////////////////////
+	//Direct connection by IP
+	mpGuiSet->CreateWidgetLabel(vPos, cVector2f(fInnerWidth, 20), CoopText("DirectHeader", "Direct connection (LAN, Radmin VPN, ZeroTier)"), mpWindow);
+	vPos.y += 22;
+
 	mpGuiSet->CreateWidgetLabel(vPos, cVector2f(fLabelWidth, 20), CoopText("Address", "Host IP"), mpWindow);
-	mpTextAddress = mpGuiSet->CreateWidgetTextBox(vPos + cVector3f(fLabelWidth,0,0), cVector2f(fFieldWidth, 20), cString::To16Char(pNet->GetAddress()), mpWindow);
+	mpTextAddress = mpGuiSet->CreateWidgetTextBox(vPos + cVector3f(fLabelWidth,0,0), cVector2f(fFieldWidth - 100, 20), cString::To16Char(pNet->GetAddress()), mpWindow);
 	mpTextAddress->SetMaxTextLength(64);
+	mpTextPort = mpGuiSet->CreateWidgetTextBox(vPos + cVector3f(fLabelWidth + fFieldWidth - 90,0,0), cVector2f(90, 20), cString::To16Char(cString::ToString(pNet->GetPort())), mpWindow);
+	mpTextPort->SetMaxTextLength(5);
 	vPos.y += fRowHeight;
 
-	mpGuiSet->CreateWidgetLabel(vPos, cVector2f(fLabelWidth, 20), CoopText("Port", "Port"), mpWindow);
-	mpTextPort = mpGuiSet->CreateWidgetTextBox(vPos + cVector3f(fLabelWidth,0,0), cVector2f(90, 20), cString::To16Char(cString::ToString(pNet->GetPort())), mpWindow);
-	mpTextPort->SetMaxTextLength(5);
-	vPos.y += fRowHeight + 6;
-
-	//////////////////////////
-	//Host / Join / Leave
-	float fButtonSepp = 6;
-	float fButtonWidth = (mvWindowSize.x - fBorderSize*2 - fButtonSepp*2) / 3.0f;
-
-	mpHostButton = mpGuiSet->CreateWidgetButton(vPos, cVector2f(fButtonWidth, 30), CoopText("Host", "Host game"), mpWindow);
+	float fButtonWidth = (fInnerWidth - fButtonSepp*2) / 3.0f;
+	mpHostButton = mpGuiSet->CreateWidgetButton(vPos, cVector2f(fButtonWidth, 28), CoopText("Host", "Host by IP"), mpWindow);
 	mpHostButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressHost));
 
-	mpJoinButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f(fButtonWidth + fButtonSepp,0,0), cVector2f(fButtonWidth, 30), CoopText("Join", "Join"), mpWindow);
+	mpJoinButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f(fButtonWidth + fButtonSepp,0,0), cVector2f(fButtonWidth, 28), CoopText("Join", "Join by IP"), mpWindow);
 	mpJoinButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressJoin));
 
-	mpLeaveButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f((fButtonWidth + fButtonSepp)*2,0,0), cVector2f(fButtonWidth, 30), CoopText("Leave", "Leave"), mpWindow);
+	mpLeaveButton = mpGuiSet->CreateWidgetButton(vPos + cVector3f((fButtonWidth + fButtonSepp)*2,0,0), cVector2f(fButtonWidth, 28), CoopText("Leave", "Leave"), mpWindow);
 	mpLeaveButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressLeave));
-	vPos.y += 30 + fButtonSepp*2;
+	vPos.y += 28 + fButtonSepp*2;
 
 	//////////////////////////
 	//Status
-	cVector2f vStatusSize(mvWindowSize.x - fBorderSize*2, mvWindowSize.y - vPos.y - 50);
+	cVector2f vStatusSize(fInnerWidth, mvWindowSize.y - vPos.y - 50);
 	mpLStatus = mpGuiSet->CreateWidgetLabel(vPos, vStatusSize, _W(""), mpWindow);
 	mpLStatus->SetWordWrap(true);
 	mpLStatus->SetDrawBackGround(true);
@@ -167,26 +199,24 @@ void cLuxMainMenu_Coop::UpdateStatus()
 	if(mpLStatus==NULL) return;
 
 	cLuxCoopNet *pNet = gpBase->mpCoopNet;
+	bool bSteam = pNet->GetNetType() == eLuxCoopNetType_Steam;
 	tString sStatus;
 
 	if(pNet->IsActive()==false)
 	{
-		sStatus = "Not connected. Press \"Host game\" to wait for a partner, or enter the host's IP and press \"Join\".";
+		sStatus = "Not connected. Host a Steam lobby or find one, or connect directly by IP.";
+		tString sError = pNet->GetTransportStatus();
+		if(sError != "") sStatus += "\n" + sError;
 	}
-	else if(pNet->IsHost())
+	else if(pNet->IsConnected())
 	{
-		if(pNet->IsConnected())
-			sStatus = "Partner '" + pNet->GetPartnerName() + "' joined. Press \"Start game\" to begin together.";
-		else
-			sStatus = "Hosting on port " + cString::ToString(pNet->GetPort()) + ". Waiting for a partner to join...\n"
-					  "Your partner needs your IP (LAN, Radmin VPN or ZeroTier). Allow Amnesia through the Windows firewall.";
+		if(pNet->IsHost())	sStatus = "Partner '" + pNet->GetPartnerName() + "' joined. Press \"Start game\" to begin together.";
+		else				sStatus = "Connected to '" + pNet->GetPartnerName() + "'. Waiting for the host to start the game...";
 	}
 	else
 	{
-		if(pNet->IsConnected())
-			sStatus = "Connected to '" + pNet->GetPartnerName() + "'. Waiting for the host to start the game...";
-		else
-			sStatus = "Connecting to " + pNet->GetAddress() + ":" + cString::ToString(pNet->GetPort()) + "...";
+		sStatus = pNet->GetTransportStatus();
+		if(sStatus == "") sStatus = pNet->IsHost() ? "Waiting for a partner..." : "Connecting...";
 	}
 
 	mpLStatus->SetText(cString::To16Char(sStatus));
@@ -199,6 +229,44 @@ void cLuxMainMenu_Coop::UpdateStatus()
 	mpTextAddress->SetEnabled(bActive==false);
 	mpTextPort->SetEnabled(bActive==false);
 	mpStartButton->SetEnabled(pNet->IsHost() && pNet->IsConnected());
+
+	cLuxCoopTransport_Steam *pSteam = pNet->GetSteam();
+	mpSteamPublicButton->SetEnabled(bActive==false);
+	mpSteamFriendsButton->SetEnabled(bActive==false);
+	mpSteamFindButton->SetEnabled(bActive==false && (pSteam==NULL || pSteam->IsListingLobbies()==false));
+	mpSteamInviteButton->SetEnabled(bActive && bSteam && pNet->IsHost() && pSteam && pSteam->InLobby());
+
+	UpdateLobbyList();
+}
+
+void cLuxMainMenu_Coop::UpdateLobbyList()
+{
+	cLuxCoopNet *pNet = gpBase->mpCoopNet;
+	cLuxCoopTransport_Steam *pSteam = pNet->GetSteam();
+	bool bShow = mbSearched && pNet->IsActive()==false && pSteam && pSteam->IsAvailable();
+
+	const tLuxCoopLobbyInfoVec *pLobbies = bShow ? &pSteam->GetLobbies() : NULL;
+	for(int i=0; i<kCoopLobbyListSize; ++i)
+	{
+		msLobbyIds[i] = "";
+		if(pLobbies && i < (int)pLobbies->size())
+		{
+			const cLuxCoopLobbyInfo &lobby = (*pLobbies)[i];
+			msLobbyIds[i] = lobby.msId;
+			mpLobbyButtons[i]->SetText(cString::To16Char(lobby.msName + "  (" + cString::ToString(lobby.mlMembers) + "/" + cString::ToString(lobby.mlMaxMembers) + ")"));
+			mpLobbyButtons[i]->SetVisible(true);
+		}
+		else if(i==0 && bShow)
+		{
+			//One line saying the search is running or found nothing
+			mpLobbyButtons[i]->SetText(pSteam->IsListingLobbies() ? CoopText("SteamSearching", "Searching...") : CoopText("SteamNoGames", "No games found. Ask your friend to host, then search again."));
+			mpLobbyButtons[i]->SetVisible(true);
+		}
+		else
+		{
+			mpLobbyButtons[i]->SetVisible(false);
+		}
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -256,6 +324,57 @@ bool cLuxMainMenu_Coop::PressLeave(iWidget* apWidget, const cGuiMessageData& aDa
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressLeave);
+
+//-----------------------------------------------------------------------
+
+bool cLuxMainMenu_Coop::PressSteamPublic(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	gpBase->mpCoopNet->HostSteam(GetEnteredName(), true);
+	UpdateStatus();
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressSteamPublic);
+
+bool cLuxMainMenu_Coop::PressSteamFriends(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	gpBase->mpCoopNet->HostSteam(GetEnteredName(), false);
+	UpdateStatus();
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressSteamFriends);
+
+bool cLuxMainMenu_Coop::PressSteamFind(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	cLuxCoopNet *pNet = gpBase->mpCoopNet;
+	if(pNet->SteamAvailable()) pNet->GetSteam()->RequestLobbyList();
+	mbSearched = true;
+	UpdateStatus();
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressSteamFind);
+
+bool cLuxMainMenu_Coop::PressSteamInvite(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	cLuxCoopTransport_Steam *pSteam = gpBase->mpCoopNet->GetSteam();
+	if(pSteam) pSteam->OpenInviteDialog();
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressSteamInvite);
+
+bool cLuxMainMenu_Coop::PressLobby(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	for(int i=0; i<kCoopLobbyListSize; ++i)
+	{
+		if(apWidget != mpLobbyButtons[i] || msLobbyIds[i] == "") continue;
+
+		gpBase->mpCoopNet->JoinSteamLobby(GetEnteredName(), msLobbyIds[i]);
+		mbSearched = false;
+		UpdateStatus();
+		break;
+	}
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressLobby);
 
 //-----------------------------------------------------------------------
 

@@ -23,6 +23,7 @@
 //----------------------------------------------
 
 #include "LuxBase.h"
+#include "LuxCoopTransport.h"
 
 //----------------------------------------------
 
@@ -34,9 +35,8 @@ class cLuxInventory_Item;
 class iLuxEnemy;
 class cLuxNode_PlayerStart;
 
-struct _ENetHost;
-struct _ENetPeer;
-struct _ENetPacket;
+class cLuxCoopTransport_ENet;
+class cLuxCoopTransport_Steam;
 
 //----------------------------------------------
 
@@ -45,6 +45,13 @@ enum eLuxCoopMode
 	eLuxCoopMode_Off,
 	eLuxCoopMode_Host,
 	eLuxCoopMode_Client,
+};
+
+//How the two games reach each other
+enum eLuxCoopNetType
+{
+	eLuxCoopNetType_Direct,		//ENet, by IP address
+	eLuxCoopNetType_Steam,		//Steam lobby and relays
 };
 
 enum eLuxCoopMsg
@@ -239,7 +246,7 @@ private:
 
 //----------------------------------------------
 
-class cLuxCoopNet : public iLuxUpdateable
+class cLuxCoopNet : public iLuxUpdateable, public iLuxCoopTransportListener
 {
 public:
 	cLuxCoopNet();
@@ -260,7 +267,8 @@ public:
 	eLuxCoopMode GetMode(){ return mMode; }
 	bool IsActive(){ return mMode != eLuxCoopMode_Off; }
 	bool IsHost(){ return mMode == eLuxCoopMode_Host; }
-	bool IsConnected(){ return mpPeer != NULL && mbHandshakeDone; }
+	bool IsConnected();
+	eLuxCoopNetType GetNetType(){ return mNetType; }
 
 	const tString& GetPartnerName(){ return msPartnerName; }
 	const tString& GetPartnerMap(){ return msPartnerMap; }
@@ -316,6 +324,21 @@ public:
 	void Leave();
 	void StartCoopGame();
 
+	//Steam lobbies; Steam is started the first time one of these is used
+	bool HostSteam(const tString& asName, bool abPublic);
+	bool JoinSteamLobby(const tString& asName, const tString& asLobbyId);
+	cLuxCoopTransport_Steam* GetSteam(){ return mpSteam; }
+	bool SteamAvailable();
+
+	//Status line for the lobby window, in English
+	tString GetTransportStatus();
+
+	/////////////////////////
+	// Transport events
+	void OnTransportConnected();
+	void OnTransportDisconnected();
+	void OnTransportPacket(const unsigned char *apData, size_t alSize);
+
 	const tString& GetName(){ return msName; }
 	const tString& GetAddress(){ return msAddress; }
 	int GetPort(){ return mlPort; }
@@ -324,8 +347,7 @@ private:
 	bool StartNetwork();
 	void StopNetwork();
 
-	void PollEvents();
-	void HandlePacket(_ENetPacket *apPacket);
+	void HandlePacket(cLuxCoopBuffer &aBuffer);
 	void HandleHello(cLuxCoopBuffer &aBuffer);
 	void HandlePlayerState(cLuxCoopBuffer &aBuffer);
 	void HandleMapInfo(cLuxCoopBuffer &aBuffer);
@@ -385,12 +407,15 @@ private:
 	float mfLastHealth;
 	float mfStateSendInterval;
 
-	_ENetHost *mpHost;
-	_ENetPeer *mpPeer;
-	bool mbEnetInitialized;
+	eLuxCoopNetType mNetType;
+	iLuxCoopTransport *mpTransport;		//The one in use, NULL while off
+	cLuxCoopTransport_ENet *mpENet;
+	cLuxCoopTransport_Steam *mpSteam;
+	int mlSteamAppId;
+	tString msSteamDir;
+	tString msSteamLobby;
 	bool mbHandshakeDone;
 	float mfStateSendCount;
-	float mfReconnectCount;
 	float mfBodySendCount;
 	float mfTime;
 	bool mbApplyingRemote;

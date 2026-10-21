@@ -49,10 +49,29 @@ if(WIN32)
     target_link_libraries(enet ws2_32 winmm)
 endif()
 
+# Steam lobbies for co-op: point STEAMWORKS_SDK_DIR at the sdk folder of the Steamworks SDK
+set(STEAMWORKS_SDK_DIR "" CACHE PATH "Steamworks SDK 'sdk' folder; empty builds co-op without Steam")
+if(STEAMWORKS_SDK_DIR)
+	list(APPEND compile_defs COOP_STEAM)
+	if(WIN32)
+		set(steam_lib ${STEAMWORKS_SDK_DIR}/redistributable_bin/steam_api.lib)
+	elseif(APPLE)
+		set(steam_lib ${STEAMWORKS_SDK_DIR}/redistributable_bin/osx/libsteam_api.dylib)
+	elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(steam_lib ${STEAMWORKS_SDK_DIR}/redistributable_bin/linux64/libsteam_api.so)
+	else()
+		set(steam_lib ${STEAMWORKS_SDK_DIR}/redistributable_bin/linux32/libsteam_api.so)
+	endif()
+endif()
+
 add_executable(Amnesia MACOSX_BUNDLE
     ${full_sources}
 )
 target_link_libraries(Amnesia HPL2 enet)
+if(STEAMWORKS_SDK_DIR)
+	target_include_directories(Amnesia PRIVATE ${STEAMWORKS_SDK_DIR}/public)
+	target_link_libraries(Amnesia ${steam_lib})
+endif()
 set_target_properties(Amnesia PROPERTIES
 	COMPILE_DEFINITIONS "${compile_defs}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Game-Info.plist"

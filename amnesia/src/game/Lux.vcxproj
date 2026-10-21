@@ -137,6 +137,19 @@
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
   </ItemDefinitionGroup>
+  <!-- Co-op Steam lobbies: build with /p:SteamworksSdkDir=<Steamworks SDK>\sdk\ . steam_api.dll is delay-loaded,
+       because the game folder has an older one; the game loads the SDK's copy from _coop\steam first. -->
+  <ItemDefinitionGroup Condition="'$(SteamworksSdkDir)'!='' And Exists('$(SteamworksSdkDir)public\steam\steam_api.h')">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SteamworksSdkDir)public;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>COOP_STEAM;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>steam_api.lib;delayimp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SteamworksSdkDir)redistributable_bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <DelayLoadDLLs>steam_api.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="LegacyCrtShim.cpp" />
     <ClCompile Include="LuxAchievementHandler.cpp" />
@@ -199,6 +212,8 @@
     <ClCompile Include="LuxGlobalDataHandler.cpp" />
     <ClCompile Include="LuxHintHandler.cpp" />
     <ClCompile Include="LuxCoopNet.cpp" />
+    <ClCompile Include="LuxCoopTransport_ENet.cpp" />
+    <ClCompile Include="LuxCoopTransport_Steam.cpp" />
     <ClCompile Include="LuxMainMenu_Coop.cpp" />
     <ClCompile Include="..\coop\enet\callbacks.c" />
     <ClCompile Include="..\coop\enet\compress.c" />
@@ -319,6 +334,9 @@
     <ClInclude Include="LuxGlobalDataHandler.h" />
     <ClInclude Include="LuxHintHandler.h" />
     <ClInclude Include="LuxCoopNet.h" />
+    <ClInclude Include="LuxCoopTransport.h" />
+    <ClInclude Include="LuxCoopTransport_ENet.h" />
+    <ClInclude Include="LuxCoopTransport_Steam.h" />
     <ClInclude Include="LuxMainMenu_Coop.h" />
     <ClInclude Include="LuxInputHandler.h" />
     <ClInclude Include="LuxInsanityHandler.h" />
