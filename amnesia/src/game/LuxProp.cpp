@@ -18,6 +18,7 @@
  */
 
 #include "LuxProp.h"
+#include "LuxCoopNet.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -561,6 +562,8 @@ void iLuxProp::SetEffectsActive(bool abActive, bool abFadeAndPlaySounds)
 
 void iLuxProp::GiveDamage(float afAmount, int alStrength)
 {
+	if(gpBase->mpCoopNet && gpBase->mpCoopNet->IgnoreLocalPropDamage()) return;
+
 	if(alStrength < mlToughness-1)			afAmount =0;
 	else if(alStrength == mlToughness-1)	afAmount *= 0.5;
 	
@@ -745,9 +748,12 @@ void iLuxProp::PlayAnimation(const tString& asName, float afFadeTime, bool abLoo
 
 void iLuxProp::SetHealth(float afX)
 {
+	float fOldHealth = mfHealth;
 	mfHealth = afX;
 
 	OnHealthChange();
+
+	if(gpBase->mpCoopNet) gpBase->mpCoopNet->OnPropHealthChange(this, fOldHealth);
 }
 
 //-------------------------------------------------------------------

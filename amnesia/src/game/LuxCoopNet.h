@@ -66,6 +66,7 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_EnemyStates,
 	eLuxCoopMsg_EnemySound,
 	eLuxCoopMsg_Damage,
+	eLuxCoopMsg_PropHealth,
 };
 
 //----------------------------------------------
@@ -80,6 +81,7 @@ public:
 	cLuxCoopBuffer(const unsigned char *apData, size_t alSize) : mvData(apData, apData+alSize), mlReadPos(0), mbReadError(false){}
 
 	void AddByte(unsigned char alX){ mvData.push_back(alX); }
+	void AddShort(short alX){ AddByte((unsigned char)(alX & 0xff)); AddByte((unsigned char)((alX >> 8) & 0xff)); }
 	void AddInt(int alX);
 	void AddFloat(float afX);
 	void AddVector3f(const cVector3f& avX){ AddFloat(avX.x); AddFloat(avX.y); AddFloat(avX.z); }
@@ -88,6 +90,7 @@ public:
 	void AddBuffer(const cLuxCoopBuffer& aX){ mvData.insert(mvData.end(), aX.mvData.begin(), aX.mvData.end()); }
 
 	unsigned char GetByte();
+	short GetShort(){ unsigned int lLow = GetByte(); unsigned int lHigh = GetByte(); return (short)(lLow | (lHigh << 8)); }
 	int GetInt();
 	float GetFloat();
 	cVector3f GetVector3f(){ float x = GetFloat(); float y = GetFloat(); float z = GetFloat(); return cVector3f(x,y,z); }
@@ -109,20 +112,37 @@ private:
 //----------------------------------------------
 
 /**
- * Last body transform the host sent, so only bodies that moved are sent again.
+ * Last body transform sent to the partner, so only bodies that moved are sent again.
  */
 class cLuxCoopSentBody
 {
 public:
+	cLuxCoopSentBody() : mfTime(-1000.0f), mlRestSendsLeft(0){}
+
 	cVector3f mvPos;
 	cQuaternion mqRot;
 	float mfTime;
+	int mlRestSendsLeft;	//A body that came to rest is sent a couple of times more, flagged as resting
 };
 
-//Bodies are keyed by entity name and body index; ids of entities created at runtime can differ between the two games
+/**
+ * A body waiting for its turn in the per-tick send budget.
+ */
+class cLuxCoopBodyCandidate
+{
+public:
+	iLuxProp *mpProp;
+	int mlBodyIdx;
+	float mfPriority;
+	bool mbRest;
+};
+
+//Bodies are keyed by entity name and body index; ids of entities created at runtime can differ between the two games.
+//On the wire the name is replaced by a 32 bit hash of it.
 typedef std::pair<tString, int> tLuxCoopBodyKey;
 typedef std::map<tLuxCoopBodyKey, cLuxCoopSentBody> tLuxCoopSentBodyMap;
 typedef std::map<tLuxCoopBodyKey, float> tLuxCoopOwnedBodyMap;
+typedef std::map<unsigned int, tString> tLuxCoopNameHashMap;
 
 //----------------------------------------------
 
@@ -242,6 +262,11 @@ public:
 	bool IsApplyingRemote(){ return mbApplyingRemote; }
 
 	/////////////////////////
+	// Prop health: the host decides when things break
+	bool IgnoreLocalPropDamage();
+	void OnPropHealthChange(iLuxProp *apProp, float afOldHealth);
+
+	/////////////////////////
 	// Lobby
 	bool Host(const tString& asName, int alPort);
 	bool Join(const tString& asName, const tString& asAddress, int alPort);
@@ -275,6 +300,7 @@ private:
 	void HandleEnemyStates(cLuxCoopBuffer &aBuffer);
 	void HandleEnemySound(cLuxCoopBuffer &aBuffer);
 	void HandleDamage(cLuxCoopBuffer &aBuffer);
+	void HandlePropHealth(cLuxCoopBuffer &aBuffer);
 	void SendEnemyStates();
 
 	void UpdateDowned(float afTimeStep);
@@ -292,10 +318,15 @@ private:
 	void SendMapInfo();
 	void SendBodyStates();
 	void SendOwnedBodyStates();
+	void SendBodyCandidates(std::vector<cLuxCoopBodyCandidate> &avCandidates);
 	bool IsClientOwned(const tLuxCoopBodyKey& aKey);
-	void AddBodyEntry(cLuxCoopBuffer &aBuffer, iLuxProp *apProp, int alBodyIdx);
+	void AddBodyEntry(cLuxCoopBuffer &aBuffer, iLuxProp *apProp, int alBodyIdx, bool abRest);
+	void ApplyBodyState(iPhysicsBody *apBody, const cVector3f& avPos, const cQuaternion& aqRot, const cVector3f& avLinVel, const cVector3f& avAngVel, bool abRest);
 	iPhysicsBody* GetInteractBody();
 	void SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEntries, int alCount);
+
+	static unsigned int HashName(const tString& asName);
+	iLuxProp* GetPropByNameHash(unsigned int alHash);
 	void Send(const cLuxCoopBuffer &aBuffer, int alChannel, bool abReliable);
 
 	tString GetCurrentMapFile();
@@ -337,6 +368,8 @@ private:
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;
 	tLuxCoopOwnedBodyMap m_mapClientOwnedBodies;
+	tLuxCoopNameHashMap m_mapPropNameHashes;
+	float mfPropNameHashTime;
 
 	tString msPartnerName;
 	tString msPartnerMap;
