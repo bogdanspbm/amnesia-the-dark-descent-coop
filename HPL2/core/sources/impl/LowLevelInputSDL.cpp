@@ -29,6 +29,10 @@
 
 #include "engine/Engine.h"
 
+#ifdef WIN32
+// Include before SDL_syswm.h, which pulls windows.h in under SDL's pack(4)
+#include <windows.h>
+#endif
 #if USE_SDL2
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_syswm.h"

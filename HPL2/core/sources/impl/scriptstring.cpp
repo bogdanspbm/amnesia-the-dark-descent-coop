@@ -499,6 +499,11 @@ static char *StringCharAt(unsigned int i, CScriptString &str)
 	return &str.buffer[i];
 }
 
+static void StringResize(size_t n, string &str)
+{
+	str.resize(n);
+}
+
 static void StringCharAt_Generic(asIScriptGeneric *gen)
 {
 	unsigned int i = gen->GetArgDWord(0);
@@ -661,12 +666,12 @@ void RegisterScriptString_Native(asIScriptEngine *engine)
 	if( sizeof(size_t) == 4 )
 	{
 		r = engine->RegisterObjectMethod("string", "uint length() const", asMETHOD(string,size), asCALL_THISCALL); assert( r >= 0 );
-		r = engine->RegisterObjectMethod("string", "void resize(uint)", asMETHODPR(string,resize,(size_t),void), asCALL_THISCALL); assert( r >= 0 );
+		r = engine->RegisterObjectMethod("string", "void resize(uint)", asFUNCTION(StringResize), asCALL_CDECL_OBJLAST); assert( r >= 0 );
 	}
 	else
 	{
 		r = engine->RegisterObjectMethod("string", "uint64 length() const", asMETHOD(string,size), asCALL_THISCALL); assert( r >= 0 );
-		r = engine->RegisterObjectMethod("string", "void resize(uint64)", asMETHODPR(string,resize,(size_t),void), asCALL_THISCALL); assert( r >= 0 );
+		r = engine->RegisterObjectMethod("string", "void resize(uint64)", asFUNCTION(StringResize), asCALL_CDECL_OBJLAST); assert( r >= 0 );
 	}
 
     // TODO: Add factory  string(const string &in str, int repeatCount)
