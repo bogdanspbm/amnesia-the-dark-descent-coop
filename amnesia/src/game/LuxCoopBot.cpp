@@ -92,6 +92,8 @@ cLuxCoopBot::cLuxCoopBot()
 	mbCrouching = false;
 	mfLookTargetTime = 0;
 	mvMoveDir = 0;
+	mvLookAheadDir = 0;
+	mfLookBackCount = 0;
 	mfGlanceCount = 3;
 	mfNoiseT = 0;
 }
@@ -432,8 +434,17 @@ bool cLuxCoopBot::UpdateStep(float afTimeStep)
 		}
 
 		//Glance back over the shoulder, which is what makes a chase look like one
-		if(step.mbLookBack && bEnemy && mfLookTargetTime <= 0 && Rand(0,1) < afTimeStep*0.35f)
-			SetLookTarget(vEnemy + cVector3f(0,1.4f,0), Rand(0.5f, 0.9f));
+		//(often and long enough while it is close, so it actually ends up in the shot)
+		if(step.mbLookBack && bEnemy && mfLookTargetTime <= 0)
+		{
+			mfLookBackCount -= afTimeStep;
+			if(mfLookBackCount <= 0)
+			{
+				bool bClose = cMath::Vector3Dist(vEnemy, GetFeetPos()) < 12;
+				mfLookBackCount = bClose ? Rand(2.0f, 3.0f) : Rand(4.0f, 6.0f);
+				SetLookTarget(vEnemy + cVector3f(0,1.4f,0), bClose ? Rand(0.9f, 1.4f) : Rand(0.6f, 0.9f));
+			}
+		}
 
 		bool bOver = bArrived || mfStepTime >= (step.mfTime > 0 ? step.mfTime : kBotDefaultFleeTime);
 		if(bOver)
@@ -528,6 +539,23 @@ bool cLuxCoopBot::MoveTowards(const cVector3f& avGoal, float afArriveDist, float
 	vDir = vDir / fLen;
 	mvMoveDir = vDir;
 
+	//Look where the path goes a few meters ahead, not at the next node, which on a corner is a wall
+	cVector3f vAhead = vPos;
+	float fLeft = 3.5f;
+	cVector3f vFrom = vPos;
+	for(std::list<cVector3f>::iterator it = mlstPath.begin(); it != mlstPath.end() && fLeft > 0; ++it)
+	{
+		cVector3f vSeg = *it - vFrom;	vSeg.y = 0;
+		float fSeg = vSeg.Length();
+		if(fSeg >= fLeft) { vAhead = vFrom + vSeg * (fLeft / fSeg); fLeft = 0; break; }
+		fLeft -= fSeg;
+		vFrom = *it;
+		vAhead = *it;
+	}
+	if(mlstPath.empty()) vAhead = avGoal;
+	cVector3f vLookAhead = vAhead - vPos;	vLookAhead.y = 0;
+	mvLookAheadDir = vLookAhead.Length() > 0.3f ? vLookAhead / vLookAhead.Length() : vDir;
+
 	//Walk along the path while the head may look elsewhere: split the direction into the view's forward and right
 	cCamera *pCam = pPlayer->GetCamera();
 	cVector3f vFwd = pCam->GetForward();	vFwd.y = 0;	vFwd.Normalize();
@@ -610,6 +638,7 @@ void cLuxCoopBot::StopMoving()
 	if(mvMoveDir.Length() > 0.5f) mfGlanceCount = 0;
 	mlstPath.clear();
 	mvMoveDir = 0;
+	mvLookAheadDir = 0;
 	mfStuckTime = 0;
 	mlStuckCount = 0;
 	mlSidestep = 0;
@@ -641,7 +670,7 @@ void cLuxCoopBot::UpdateLook(float afTimeStep)
 	}
 	if(bHaveDir==false && mvMoveDir.Length() > 0.5f)
 	{
-		vWantDir = mvMoveDir;
+		vWantDir = mvLookAheadDir.Length() > 0.5f ? mvLookAheadDir : mvMoveDir;
 		vWantDir.y = sinf(kBotWalkPitch);
 		bHaveDir = true;
 
@@ -764,11 +793,15 @@ bool cLuxCoopBot::GetTargetPos(const tString& asTargetName, cVector3f& avPos)
 		return true;
 	}
 
-	cLuxNode_PlayerStart *pStart = pMap->GetPlayerStart(asTarget);
-	if(pStart)
+	//Looked up by hand, GetPlayerStart warns on every miss
+	for(int i=0; i<pMap->GetPlayerStartNodeNum(); ++i)
 	{
-		avPos = pStart->GetPosition();
-		return true;
+		cLuxNode_PlayerStart *pStart = pMap->GetPlayerStartNode(i);
+		if(cString::ToLowerCase(pStart->GetName()) == sLower)
+		{
+			avPos = pStart->GetPosition();
+			return true;
+		}
 	}
 
 	if(mpNodeContainer)
@@ -780,6 +813,8 @@ bool cLuxCoopBot::GetTargetPos(const tString& asTargetName, cVector3f& avPos)
 			return true;
 		}
 	}
+	if(m_setMissingTargets.insert(sLower).second)
+		Warning("Coop bot: target '%s' not found on this map\n", asTargetName.c_str());
 	return false;
 }
 

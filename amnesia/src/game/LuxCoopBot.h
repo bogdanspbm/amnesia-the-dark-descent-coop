@@ -152,6 +152,9 @@ private:
 	cVector3f mvLookTarget;
 	float mfLookTargetTime;	//Seconds left looking at mvLookTarget instead of where we walk
 	cVector3f mvMoveDir;
+	cVector3f mvLookAheadDir;
+	float mfLookBackCount;
+	std::set<tString> m_setMissingTargets;	//Warned about once each
 	float mfGlanceCount;
 	float mfNoiseT;
 };
