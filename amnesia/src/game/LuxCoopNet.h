@@ -25,6 +25,7 @@
 #include "LuxBase.h"
 #include "LuxCoopTransport.h"
 #include "LuxCoopBot.h"
+#include "LuxCoopRecorder.h"
 
 //----------------------------------------------
 
@@ -268,6 +269,7 @@ public:
 
 	void OnStart();
 	void Update(float afTimeStep);
+	void OnPostRender(float afFrameTime);
 	void OnQuit();
 
 	void OnMapEnter(cLuxMap *apMap);
@@ -392,6 +394,7 @@ private:
 	void SendStartGame(eLuxCoopStartKind aKind);
 	void StepAsideFromPartner();
 	void UpdateBot(float afTimeStep);
+	void UpdateRecording(float afTimeStep);
 	void SendEnemyStates();
 
 	void UpdateDowned(float afTimeStep);
@@ -484,6 +487,13 @@ private:
 	tString msBotScene;		//Dev/Scene in coop.cfg: a scene file the bot plays, for filming
 	bool mbBotSceneLoaded;
 	cLuxCoopBot mBot;
+
+	//Dev/Record in coop.cfg: an .mp4 to film the bot's scene to, from its start until a moment after its end
+	tString msRecordFile;
+	int mlRecordFps;
+	float mfRecordTail;
+	bool mbRecordDone;
+	cLuxCoopRecorder mRecorder;
 
 	cLuxCoopAvatar mAvatar;
 };

@@ -655,6 +655,9 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mlSaveInReceived = 0;
 	mbContinuePending = false;
 	mbBotSceneLoaded = false;
+	mlRecordFps = 30;
+	mfRecordTail = 1.5f;
+	mbRecordDone = false;
 }
 
 //-----------------------------------------------------------------------
@@ -708,6 +711,9 @@ void cLuxCoopNet::LoadMainConfig()
 	mAvatarSettings.msLanternOffset = pCfg->GetString("Player", "AvatarLanternOffset", "");
 
 	msBotScene = pCfg->GetString("Dev", "Scene", "");
+	msRecordFile = pCfg->GetString("Dev", "Record", "");
+	mlRecordFps = pCfg->GetInt("Dev", "RecordFps", 30);
+	mRecorder.SetStills(pCfg->GetFloat("Dev", "RecordStills", 0));
 
 	int lRate = cMath::Max(5, pCfg->GetInt("Network", "StateRate", 20));
 	mfStateSendInterval = 1.0f / (float)lRate;
@@ -1295,12 +1301,44 @@ void cLuxCoopNet::UpdateBot(float afTimeStep)
 
 	bool bPartner = IsConnected() && mAvatar.IsShown();
 	mBot.Update(afTimeStep, bPartner, bPartner ? mAvatar.GetPosition() : cVector3f(0));
+
+	UpdateRecording(afTimeStep);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::UpdateRecording(float afTimeStep)
+{
+	if(msRecordFile == "" || mbRecordDone) return;
+
+	int lState = GetBotSceneState();
+	if(lState == 1 && mRecorder.IsRecording()==false)
+	{
+		cVector2l vSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();
+		if(mRecorder.Start(msRecordFile, vSize.x, vSize.y, mlRecordFps)==false) mbRecordDone = true;
+	}
+	else if(lState == 2 && mRecorder.IsRecording())
+	{
+		//A little more after the scene, so it does not end on a cut
+		mfRecordTail -= afTimeStep;
+		if(mfRecordTail <= 0)
+		{
+			mRecorder.Stop();
+			mbRecordDone = true;
+		}
+	}
+}
+
+void cLuxCoopNet::OnPostRender(float afFrameTime)
+{
+	mRecorder.CaptureFrame();
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxCoopNet::OnQuit()
 {
+	mRecorder.Stop();
 	StopNetwork();
 }
 

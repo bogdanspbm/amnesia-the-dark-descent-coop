@@ -213,6 +213,7 @@
     <ClCompile Include="LuxHintHandler.cpp" />
     <ClCompile Include="LuxCoopNet.cpp" />
     <ClCompile Include="LuxCoopBot.cpp" />
+    <ClCompile Include="LuxCoopRecorder.cpp" />
     <ClCompile Include="LuxCoopTransport_ENet.cpp" />
     <ClCompile Include="LuxCoopTransport_Steam.cpp" />
     <ClCompile Include="LuxMainMenu_Coop.cpp" />
@@ -337,6 +338,7 @@
     <ClInclude Include="LuxCoopNet.h" />
     <ClInclude Include="LuxCoopTransport.h" />
     <ClInclude Include="LuxCoopBot.h" />
+    <ClInclude Include="LuxCoopRecorder.h" />
     <ClInclude Include="LuxCoopTransport_ENet.h" />
     <ClInclude Include="LuxCoopTransport_Steam.h" />
     <ClInclude Include="LuxMainMenu_Coop.h" />
