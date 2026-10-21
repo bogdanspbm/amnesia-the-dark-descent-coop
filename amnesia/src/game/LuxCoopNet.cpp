@@ -23,6 +23,7 @@
 #include "LuxMap.h"
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
+#include "LuxAreaNodes.h"
 #include "LuxMoveState_Normal.h"
 #include "LuxProp.h"
 #include "LuxPlayerState_Interact.h"
@@ -58,6 +59,8 @@ static const float kCoopDownedTime = 60.0f;			//Seconds a downed player waits fo
 static const float kCoopReviveTime = 3.0f;			//Seconds the partner holds Interact to revive
 static const float kCoopReviveDist = 1.8f;
 static const float kCoopReviveHealth = 30.0f;
+
+static const float kCoopCheckPointCatchUpDist = 10.0f;	//How much farther from a new checkpoint than the partner before being brought over
 
 static const float kCoopEnemySendInterval = 1.0f / 15.0f;
 static const int kCoopMaxEnemiesPerPacket = 12;
@@ -559,6 +562,36 @@ void cLuxCoopNet::GiveOrDropItem(cLuxInventory_Item *apItem)
 
 	pInventory->SetMessageText(_W("Dropped: ") + GetItemDisplayName(apItem->GetType(), apItem->GetSubType()), 0);
 	pInventory->RemoveItem(apItem);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::OnCheckPoint(cLuxNode_PlayerStart *apStartNode)
+{
+	if(apStartNode==NULL || IsConnected()==false || mAvatar.IsShown()==false) return;
+	if(mbDowned || mbPartnerDowned || mbPartnerDead) return;
+
+	//Both games run the checkpoint script, and only the one farther away moves, so the two never swap places
+	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
+	const cVector3f& vCheckPos = apStartNode->GetPosition();
+	float fLocalDist = cMath::Vector3Dist(pBody->GetFeetPosition(), vCheckPos);
+	float fPartnerDist = cMath::Vector3Dist(mAvatar.GetPosition(), vCheckPos);
+	if(fLocalDist < fPartnerDist + kCoopCheckPointCatchUpDist) return;
+
+	cVector3f vPartnerPos = mAvatar.GetPosition();
+	const float fDist = 1.1f;
+	cVector3f vOffsets[] = { cVector3f(fDist,0,0), cVector3f(-fDist,0,0), cVector3f(0,0,fDist), cVector3f(0,0,-fDist), cVector3f(0) };
+	for(size_t i=0; i<sizeof(vOffsets)/sizeof(vOffsets[0]); ++i)
+	{
+		cVector3f vPos = vPartnerPos + vOffsets[i] + cVector3f(0, 0.05f, 0);
+		if(i+1 < sizeof(vOffsets)/sizeof(vOffsets[0]) && pBody->CheckCharacterFits(vPos, true, -1, NULL, 0.01f)==false) continue;
+
+		Log("Coop: left behind at a checkpoint, joining partner\n");
+		pBody->SetFeetPosition(vPos);
+		gpBase->mpPlayer->GetHelperHudEffect()->Flash(cColor(0,1), eGuiMaterial_Alpha, 0, 0.5f);
+		ShowMessage(_W("You caught up with ") + cString::To16Char(msPartnerName));
+		return;
+	}
 }
 
 //-----------------------------------------------------------------------

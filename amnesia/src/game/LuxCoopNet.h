@@ -32,6 +32,7 @@ class cLuxProp_Item;
 class cLuxProp_Lamp;
 class cLuxInventory_Item;
 class iLuxEnemy;
+class cLuxNode_PlayerStart;
 
 struct _ENetHost;
 struct _ENetPeer;
@@ -196,6 +197,7 @@ public:
 	iPhysicsBody* GetPartnerCollideBody();
 	cVector3f AdjustStartPos(const cVector3f& avFeetPos, float afYaw);
 	void OnLocalChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound);
+	void OnCheckPoint(cLuxNode_PlayerStart *apStartNode);
 
 	/////////////////////////
 	// Shared world: local actions replayed in the partner's game

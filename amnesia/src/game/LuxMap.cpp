@@ -40,6 +40,7 @@
 #include "LuxProp_Item.h"
 #include "LuxProp_Lamp.h"
 #include "LuxArea_Sticky.h"
+#include "LuxCoopNet.h"
 
 #include <sstream>
 
@@ -470,6 +471,9 @@ void cLuxMap::SetCheckPoint(const tString& asName, const tString& asStartPos, co
 	msCheckPointStartPos = asStartPos;
 	msCheckPointCallback = asCallback;
 	mlCheckPointCount =0;
+
+	//A new checkpoint is usually a point of no return: the player left behind joins the other one
+	if(asName != "_auto") gpBase->mpCoopNet->OnCheckPoint(GetPlayerStart(asStartPos));
 
 	////////////////////////////////////
 	// Get the highest prio looping music playing
