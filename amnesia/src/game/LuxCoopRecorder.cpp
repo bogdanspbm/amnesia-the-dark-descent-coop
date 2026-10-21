@@ -28,6 +28,7 @@
 #include <mfreadwrite.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
+#include <audiopolicy.h>
 #include <process.h>
 #include <vector>
 
@@ -57,7 +58,8 @@ class cLuxCoopRecorderImpl
 {
 public:
 	cLuxCoopRecorderImpl() : mpWriter(NULL), mbRecording(false), mhAudioThread(NULL), mbAudioStop(false), mbMFStarted(false),
-							 mpAudioClient(NULL), mpCapture(NULL), mpMixFormat(NULL), mbHasAudio(false), mfStillEvery(0), mlNextStill(0)
+							 mpAudioClient(NULL), mpCapture(NULL), mpMixFormat(NULL), mbHasAudio(false), mfStillEvery(0), mlNextStill(0),
+							 mpSessionVolume(NULL), mbSessionMute(FALSE), mfSessionVolume(1)
 	{
 		InitializeCriticalSection(&mWriterLock);
 	}
@@ -76,6 +78,8 @@ public:
 private:
 	void WriteStill(LONGLONG alTime);
 	bool InitAudioCapture();
+	void UnmuteOwnSound();
+	void RestoreOwnSound();
 	static unsigned __stdcall AudioThreadFunc(void *apThis);
 	void AudioLoop();
 	void WriteAudio(const short *apData, UINT32 alFrames);
@@ -107,6 +111,11 @@ private:
 	LONGLONG mlAudioFrames;		//Frames written so far, including silence
 	HANDLE mhAudioThread;
 	volatile bool mbAudioStop;
+
+	//This game's volume in the Windows mixer, turned up while recording and put back after
+	ISimpleAudioVolume *mpSessionVolume;
+	BOOL mbSessionMute;
+	float mfSessionVolume;
 };
 
 //-----------------------------------------------------------------------
@@ -131,6 +140,7 @@ bool cLuxCoopRecorderImpl::Start(const tString& asFile, int alWidth, int alHeigh
 	mbMFStarted = true;
 
 	mbHasAudio = InitAudioCapture();
+	if(mbHasAudio) UnmuteOwnSound();
 
 	IMFAttributes *pAttr = NULL;
 	MFCreateAttributes(&pAttr, 1);
@@ -238,6 +248,7 @@ void cLuxCoopRecorderImpl::Stop()
 	if(mpCapture){ mpCapture->Release(); mpCapture = NULL; }
 	if(mpAudioClient){ mpAudioClient->Release(); mpAudioClient = NULL; }
 	if(mpMixFormat){ CoTaskMemFree(mpMixFormat); mpMixFormat = NULL; }
+	RestoreOwnSound();
 
 	if(mpWriter)
 	{
@@ -363,6 +374,65 @@ bool cLuxCoopRecorderImpl::InitAudioCapture()
 	if(FAILED(hr)) { Warning("Coop: recorder: audio loopback failed (0x%08x)\n", (unsigned)hr); return false; }
 	hr = mpAudioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&mpCapture);
 	return SUCCEEDED(hr);
+}
+
+//Loopback hears the game only as loud as the Windows mixer lets it play; test windows are often muted there
+void cLuxCoopRecorderImpl::UnmuteOwnSound()
+{
+	IMMDeviceEnumerator *pEnum = NULL;
+	IMMDevice *pDevice = NULL;
+	IAudioSessionManager2 *pManager = NULL;
+	IAudioSessionEnumerator *pSessions = NULL;
+	if(FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&pEnum))) return;
+	if(SUCCEEDED(pEnum->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice)) &&
+	   SUCCEEDED(pDevice->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, NULL, (void**)&pManager)) &&
+	   SUCCEEDED(pManager->GetSessionEnumerator(&pSessions)))
+	{
+		int lCount = 0;
+		pSessions->GetCount(&lCount);
+		for(int i=0; i<lCount && mpSessionVolume==NULL; ++i)
+		{
+			IAudioSessionControl *pControl = NULL;
+			IAudioSessionControl2 *pControl2 = NULL;
+			DWORD lPid = 0;
+			if(SUCCEEDED(pSessions->GetSession(i, &pControl)) &&
+			   SUCCEEDED(pControl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&pControl2)) &&
+			   SUCCEEDED(pControl2->GetProcessId(&lPid)) && lPid == GetCurrentProcessId())
+			{
+				ISimpleAudioVolume *pVolume = NULL;
+				if(SUCCEEDED(pControl->QueryInterface(__uuidof(ISimpleAudioVolume), (void**)&pVolume)))
+				{
+					pVolume->GetMute(&mbSessionMute);
+					pVolume->GetMasterVolume(&mfSessionVolume);
+					if(mbSessionMute || mfSessionVolume < 0.99f)
+					{
+						pVolume->SetMute(FALSE, NULL);
+						pVolume->SetMasterVolume(1.0f, NULL);
+						Log("Coop: recorder: game sound unmuted in the Windows mixer while recording (was %s, %.0f%%)\n",
+							mbSessionMute ? "muted" : "on", mfSessionVolume * 100);
+						mpSessionVolume = pVolume;
+					}
+					else pVolume->Release();
+				}
+			}
+			if(pControl2) pControl2->Release();
+			if(pControl) pControl->Release();
+		}
+	}
+	if(pSessions) pSessions->Release();
+	if(pManager) pManager->Release();
+	if(pDevice) pDevice->Release();
+	pEnum->Release();
+}
+
+void cLuxCoopRecorderImpl::RestoreOwnSound()
+{
+	if(mpSessionVolume==NULL) return;
+	mpSessionVolume->SetMasterVolume(mfSessionVolume, NULL);
+	mpSessionVolume->SetMute(mbSessionMute, NULL);
+	mpSessionVolume->Release();
+	mpSessionVolume = NULL;
+	Log("Coop: recorder: game sound in the Windows mixer put back\n");
 }
 
 unsigned __stdcall cLuxCoopRecorderImpl::AudioThreadFunc(void *apThis)
