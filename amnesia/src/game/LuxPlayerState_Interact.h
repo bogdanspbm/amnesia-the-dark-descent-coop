@@ -51,6 +51,8 @@ public:
 	void OnDestroyEntity(iLuxEntity *apEntity);
 	void OnAttachBodyToStickyArea(iPhysicsBody *apBody);
 
+	iPhysicsBody* GetCurrentBody(){ return mpCurrentBody; }
+
     /////////////////////////////////
 	//Save data stuff
 	virtual void SaveToSaveData(iLuxPlayerState_SaveData* apSaveData);

@@ -26,6 +26,8 @@
 
 //----------------------------------------------
 
+class iLuxProp;
+
 struct _ENetHost;
 struct _ENetPeer;
 struct _ENetPacket;
@@ -179,6 +181,10 @@ private:
 	void SendPlayerState();
 	void SendMapInfo();
 	void SendBodyStates();
+	void SendOwnedBodyStates();
+	bool IsClientOwned(int alKey);
+	void AddBodyEntry(cLuxCoopBuffer &aBuffer, iLuxProp *apProp, int alBodyIdx);
+	iPhysicsBody* GetInteractBody();
 	void SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEntries, int alCount);
 	void Send(const cLuxCoopBuffer &aBuffer, int alChannel, bool abReliable);
 
@@ -200,6 +206,7 @@ private:
 	float mfBodySendCount;
 	float mfTime;
 	tLuxCoopSentBodyMap m_mapSentBodies;
+	std::map<int, float> m_mapClientOwnedBodies;
 
 	tString msPartnerName;
 	tString msPartnerMap;
