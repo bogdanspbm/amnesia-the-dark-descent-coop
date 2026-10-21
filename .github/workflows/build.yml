@@ -53,6 +53,11 @@ jobs:
         run: >
           cmake -S amnesia/src -B build-linux
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          -DCMAKE_LIBRARY_ARCHITECTURE=x86_64-linux-gnu
+          -DOpenGL_GL_PREFERENCE=LEGACY
+          -DOPENGL_gl_LIBRARY=/usr/lib/x86_64-linux-gnu/libGL.so
+          -DOPENGL_glu_LIBRARY=/usr/lib/x86_64-linux-gnu/libGLU.so
           -DCMAKE_POSITION_INDEPENDENT_CODE=OFF
           -DCMAKE_EXE_LINKER_FLAGS=-no-pie
           -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -fno-pie"
@@ -92,6 +97,7 @@ jobs:
         run: >
           cmake -S amnesia/src -B build-macos
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           -DIS_APPLE_64=ON
           -DCMAKE_OSX_ARCHITECTURES=x86_64
           -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
