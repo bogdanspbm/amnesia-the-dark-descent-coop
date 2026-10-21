@@ -625,6 +625,7 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mlSteamAppId = 480;
 	msSteamDir = "_coop/steam";
 	mbDevAutoStart = false;
+	mbDevAutoContinue = false;
 	mfDevAutoStartCount = 0;
 	mbHandshakeDone = false;
 	mfStateSendCount = 0;
@@ -693,7 +694,9 @@ void cLuxCoopNet::LoadMainConfig()
 	mlSteamAppId = pCfg->GetInt("Network", "SteamAppId", mlSteamAppId);
 	msSteamDir = pCfg->GetString("Network", "SteamDir", msSteamDir);
 	//For development: with Mode="host" the game starts by itself as soon as the partner has joined
-	mbDevAutoStart = pCfg->GetBool("Dev", "AutoStart", false);
+	tString sAutoStart = cString::ToLowerCase(pCfg->GetString("Dev", "AutoStart", "false"));
+	mbDevAutoStart = sAutoStart == "true" || sAutoStart == "continue";
+	mbDevAutoContinue = sAutoStart == "continue";	//"continue" loads the host's newest save for both
 	msSteamLobby = pCfg->GetString("Network", "SteamLobby", "");
 	msName = pCfg->GetString("Player", "Name", "Player");
 	mAvatarSettings.msModel = pCfg->GetString("Player", "AvatarModel", mAvatarSettings.msModel);
@@ -1201,7 +1204,8 @@ void cLuxCoopNet::Update(float afTimeStep)
 		if(mfDevAutoStartCount <= 0 && IsConnected() && gpBase->mpMapHandler->MapIsLoaded()==false)
 		{
 			Log("Coop: Dev AutoStart, starting the game\n");
-			StartCoopGame();
+			if(mbDevAutoContinue && CanContinueCoopGame())	ContinueCoopGame();
+			else											StartCoopGame();
 		}
 	}
 

@@ -425,6 +425,7 @@ private:
 	cLuxCoopAvatarSettings mAvatarSettings;
 	bool mbAvatarDirAdded;
 	bool mbDevAutoStart;
+	bool mbDevAutoContinue;
 	float mfDevAutoStartCount;
 	int mlHurtCount;
 	float mfLastHealth;
