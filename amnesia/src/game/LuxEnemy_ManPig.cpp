@@ -748,7 +748,7 @@ bool cLuxEnemy_ManPig::StateEventImplement(int alState, eLuxEnemyStateEvent aEve
 			if(mbThreatenOnAlert && PlayerIsDetected())
 			{
 				float fAngleDist = cMath::GetAngleDistanceRad(	mpCharBody->GetYaw()+kPif, 
-																gpBase->mpPlayer->GetCharacterBody()->GetYaw());
+																GetTargetBody()->GetYaw());
 				if(fabs(fAngleDist)>cMath::ToRad(30))
 					mpMover->TurnToPos(GetPlayerFeetPos());
 			}
@@ -974,7 +974,7 @@ bool cLuxEnemy_ManPig::StateEventImplement(int alState, eLuxEnemyStateEvent aEve
 		//Wait a few secs
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut_2)
 			//cAINode * pNode = GetSearchForPlayerNode();
-			cAINode * pNode = mpPathfinder->GetNodeAtPos(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition(), 4, 12,false, false, true, NULL);
+			cAINode * pNode = mpPathfinder->GetNodeAtPos(GetTargetBody()->GetFeetPosition(), 4, 12,false, false, true, NULL);
 			if(pNode)
 				mpPathfinder->MoveTo(pNode->GetPosition());
 			else
@@ -1536,9 +1536,9 @@ bool cLuxEnemy_ManPig::StateEventImplement(int alState, eLuxEnemyStateEvent aEve
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
 			
 			if(DistToPlayer2D() > 2.0f)
-				mpPathfinder->MoveTo(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition());
+				mpPathfinder->MoveTo(GetTargetBody()->GetFeetPosition());
 			else
-				mpMover->TurnToPos(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition());
+				mpMover->TurnToPos(GetTargetBody()->GetFeetPosition());
 
 			if(CanSeePlayer())
 			{
@@ -1705,7 +1705,7 @@ bool cLuxEnemy_ManPig::StateEventImplement(int alState, eLuxEnemyStateEvent aEve
 			}
 
 			//Move towards player
-			mpMover->MoveToPos(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition());
+			mpMover->MoveToPos(GetTargetBody()->GetFeetPosition());
 
 		//------------------------------
 			
@@ -2071,7 +2071,7 @@ bool cLuxEnemy_ManPig::TrackTeleportBehindPlayer()
 {
 	float fDistance = DistToPlayer2D();
 
-	cVector3f vPlayerBackward = gpBase->mpPlayer->GetCharacterBody()->GetForward()*-1;
+	cVector3f vPlayerBackward = GetTargetBody()->GetForward()*-1;
 
 	int lNumOfTries=10;
 	for(int i=0; i<lNumOfTries; ++i)
@@ -2125,7 +2125,7 @@ bool cLuxEnemy_ManPig::InsidePlayerView()
 
 	/////////////////////////
 	//If near enough, just check if in frustum
-	if(cMath::Vector3Dist(mpCharBody->GetPosition(), gpBase->mpPlayer->GetCharacterBody()->GetPosition())<2.25f)
+	if(cMath::Vector3Dist(mpCharBody->GetPosition(), GetTargetBody()->GetPosition())<2.25f)
 	{
 		//Log(" true: close!\n");
 		return pFrust->CollideBoundingVolume(mpCharBody->GetCurrentBody()->GetBoundingVolume())!=eCollision_Outside;
@@ -2164,7 +2164,7 @@ bool cLuxEnemy_ManPig::InsidePlayerView()
 
 void cLuxEnemy_ManPig::UpdateCheckInLantern(float afTimeStep)
 {
-	if(gpBase->mpPlayer->GetHelperLantern()->IsActive()==false || mbDisableTriggers)
+	if(TargetLanternOn()==false || mbDisableTriggers)
 	{
 		mfInLanternLightCount =0;
 		return;
@@ -2185,7 +2185,7 @@ void cLuxEnemy_ManPig::UpdateCheckInLantern(float afTimeStep)
 		{
 			mfInLanternLightCount+= 0.1f*mfLanternSensitivity;
 			if(mfInLanternLightCount>1) mfInLanternLightCount=1;
-			mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+			mvLastKnownPlayerPos = GetTargetBody()->GetFeetPosition();
 		}
 	}
 	else
@@ -2290,7 +2290,7 @@ void cLuxEnemy_ManPig::SetTeslaEasyEscapeDisabled(bool abX)
 
 void cLuxEnemy_ManPig::UpdateTesla(float afTimeStep)
 {
-	if(gpBase->mpPlayer->IsDead() || IsActive()==false)
+	if(TargetIsDead() || IsActive()==false)
 	{
 		if(mbTeslaMindFuckActive)
 		{
@@ -2363,7 +2363,7 @@ void cLuxEnemy_ManPig::UpdateTesla(float afTimeStep)
 		//////////////////////////////////
 		// Movement
 		/*const float fMinSpeed = 1.4;
-		float fSpeed = gpBase->mpPlayer->GetAvgSpeed();
+		float fSpeed = TargetAvgSpeed();
 		if(fSpeed>fMinSpeed)
 		{
 			float fMul = 0.15f;

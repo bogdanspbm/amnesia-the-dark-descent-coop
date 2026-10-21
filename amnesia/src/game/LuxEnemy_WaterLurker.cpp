@@ -409,7 +409,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 		///////////////////////
 		//Update the player position	
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
-			mpPathfinder->MoveTo(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition());
+			mpPathfinder->MoveTo(GetTargetBody()->GetFeetPosition());
 			SendMessage(eLuxEnemyMessage_TimeOut, 0.4f, true);
 			if(PlayerIsDetected()==false)
 			{

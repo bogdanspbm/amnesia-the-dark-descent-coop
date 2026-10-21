@@ -33,6 +33,8 @@
 #include "LuxInventory.h"
 #include "LuxMessageHandler.h"
 #include "LuxHelpFuncs.h"
+#include "LuxEnemy.h"
+#include "LuxPlayerHelpers.h"
 
 #include <enet/enet.h>
 #include <string.h>
@@ -42,7 +44,7 @@
 // CONSTANTS
 //////////////////////////////////////////////////////////////////////////
 
-static const int kCoopProtocolVersion = 2;
+static const int kCoopProtocolVersion = 3;
 static const int kCoopChannel_Reliable = 0;
 static const int kCoopChannel_State = 1;
 static const int kCoopChannelNum = 2;
@@ -56,6 +58,9 @@ static const float kCoopDownedTime = 60.0f;			//Seconds a downed player waits fo
 static const float kCoopReviveTime = 3.0f;			//Seconds the partner holds Interact to revive
 static const float kCoopReviveDist = 1.8f;
 static const float kCoopReviveHealth = 30.0f;
+
+static const float kCoopEnemySendInterval = 1.0f / 15.0f;
+static const int kCoopMaxEnemiesPerPacket = 12;
 
 static const float kCoopBodySendInterval = 1.0f / 20.0f;
 static const float kCoopBodyResendTime = 2.0f;			//Resend still bodies now and then in case a packet was lost
@@ -311,6 +316,13 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mfReviveCount = 0;
 	mbPartnerDowned = false;
 	mbPartnerDead = false;
+	mbPartnerLanternOn = false;
+	mbPartnerCrouching = false;
+	mfPartnerLightLevel = 1;
+	mfPartnerAvgSpeed = 0;
+	mfPartnerLastStateTime = 0;
+	mvPartnerLastPos = 0;
+	mfEnemySendCount = 0;
 }
 
 //-----------------------------------------------------------------------
@@ -643,6 +655,13 @@ void cLuxCoopNet::Update(float afTimeStep)
 			if(IsHost())	SendBodyStates();
 			else			SendOwnedBodyStates();
 		}
+
+		mfEnemySendCount -= afTimeStep;
+		if(mfEnemySendCount <= 0)
+		{
+			mfEnemySendCount = kCoopEnemySendInterval;
+			if(IsHost()) SendEnemyStates();
+		}
 	}
 
 	if(gpBase->mpMapHandler->MapIsLoaded()) UpdateDowned(afTimeStep);
@@ -845,6 +864,9 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_GiveItem:		if(mbHandshakeDone) HandleGiveItem(buffer); break;
 	case eLuxCoopMsg_DropItem:		if(mbHandshakeDone) HandleDropItem(buffer); break;
 	case eLuxCoopMsg_Revive:		if(mbHandshakeDone) HandleRevive(buffer); break;
+	case eLuxCoopMsg_EnemyStates:	if(mbHandshakeDone && IsHost()==false) HandleEnemyStates(buffer); break;
+	case eLuxCoopMsg_EnemySound:	if(mbHandshakeDone && IsHost()==false) HandleEnemySound(buffer); break;
+	case eLuxCoopMsg_Damage:		if(mbHandshakeDone) HandleDamage(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -882,7 +904,20 @@ void cLuxCoopNet::HandlePlayerState(cLuxCoopBuffer &aBuffer)
 	float fYaw = aBuffer.GetFloat();
 	float fPitch = aBuffer.GetFloat();
 	unsigned char lFlags = aBuffer.GetByte();
+	float fLightLevel = aBuffer.GetFloat();
 	if(aBuffer.HasReadError()) return;
+
+	float fDeltaTime = mfTime - mfPartnerLastStateTime;
+	if(fDeltaTime > 0.001f && fDeltaTime < 1.0f)
+	{
+		float fSpeed = cMath::Vector3Dist(vFeetPos, mvPartnerLastPos) / fDeltaTime;
+		mfPartnerAvgSpeed = mfPartnerAvgSpeed*0.7f + fSpeed*0.3f;
+	}
+	mfPartnerLastStateTime = mfTime;
+	mvPartnerLastPos = vFeetPos;
+	mfPartnerLightLevel = fLightLevel;
+	mbPartnerLanternOn = (lFlags & kCoopStateFlag_Lantern)!=0;
+	mbPartnerCrouching = (lFlags & kCoopStateFlag_Crouch)!=0;
 
 	msPartnerMap = sMap;
 	mbPartnerDowned = (lFlags & kCoopStateFlag_Downed)!=0;
@@ -1264,6 +1299,158 @@ void cLuxCoopNet::HandleRevive(cLuxCoopBuffer &aBuffer)
 
 //-----------------------------------------------------------------------
 
+iCharacterBody* cLuxCoopNet::GetPartnerCharBody()
+{
+	if(IsHost()==false || IsConnected()==false || mAvatar.IsShown()==false) return NULL;
+	return mAvatar.GetCharacterBody();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::OnEnemySound(iLuxEnemy *apEnemy, const tString& asSound)
+{
+	if(IsHost()==false || IsConnected()==false) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_EnemySound);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(apEnemy->GetName());
+	buffer.AddString(asSound);
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+void cLuxCoopNet::DamagePartner(float afAmount, int alStrength, eLuxDamageType aType, bool abLethal)
+{
+	if(IsConnected()==false) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_Damage);
+	buffer.AddFloat(afAmount);
+	buffer.AddInt(alStrength);
+	buffer.AddInt(aType);
+	buffer.AddByte(abLethal ? 1 : 0);
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::SendEnemyStates()
+{
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL) return;
+	tString sMap = GetCurrentMapFile();
+
+	cLuxCoopBuffer entries;
+	int lCount = 0;
+
+	cLuxEntityIterator entityIt = pMap->GetEntityIterator();
+	while(entityIt.HasNext())
+	{
+		iLuxEntity *pEntity = entityIt.Next();
+		if(pEntity->GetEntityType() != eLuxEntityType_Enemy) continue;
+		iLuxEnemy *pEnemy = static_cast<iLuxEnemy*>(pEntity);
+		iCharacterBody *pBody = pEnemy->GetCharacterBody();
+		if(pBody==NULL) continue;
+
+		cAnimationState *pAnim = pEnemy->GetCurrentAnimation();
+
+		entries.AddString(pEnemy->GetName());
+		entries.AddByte(pEnemy->IsActive() ? 1 : 0);
+		entries.AddVector3f(pBody->GetFeetPosition());
+		entries.AddFloat(pBody->GetYaw());
+		entries.AddString(pAnim ? pAnim->GetName() : "");
+		entries.AddByte(pAnim && pAnim->IsLooping() ? 1 : 0);
+		entries.AddFloat(pAnim ? pAnim->GetSpeed() : 1.0f);
+		entries.AddInt(pEnemy->GetCurrentEnemyState());
+		++lCount;
+
+		if(lCount == kCoopMaxEnemiesPerPacket)
+		{
+			cLuxCoopBuffer buffer;
+			buffer.AddByte(eLuxCoopMsg_EnemyStates);
+			buffer.AddString(sMap);
+			buffer.AddInt(lCount);
+			buffer.AddBuffer(entries);
+			Send(buffer, kCoopChannel_State, false);
+			entries = cLuxCoopBuffer();
+			lCount = 0;
+		}
+	}
+
+	if(lCount > 0)
+	{
+		cLuxCoopBuffer buffer;
+		buffer.AddByte(eLuxCoopMsg_EnemyStates);
+		buffer.AddString(sMap);
+		buffer.AddInt(lCount);
+		buffer.AddBuffer(entries);
+		Send(buffer, kCoopChannel_State, false);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleEnemyStates(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	int lCount = aBuffer.GetInt();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	for(int i=0; i<lCount; ++i)
+	{
+		tString sName = aBuffer.GetString();
+		bool bActive = aBuffer.GetByte() != 0;
+		cVector3f vFeetPos = aBuffer.GetVector3f();
+		float fYaw = aBuffer.GetFloat();
+		tString sAnim = aBuffer.GetString();
+		bool bLoop = aBuffer.GetByte() != 0;
+		float fAnimSpeed = aBuffer.GetFloat();
+		int lState = aBuffer.GetInt();
+		if(aBuffer.HasReadError()) return;
+
+		iLuxEnemy *pEnemy = static_cast<iLuxEnemy*>(pMap->GetEntityByName(sName, eLuxEntityType_Enemy));
+		if(pEnemy==NULL) continue;
+
+		if(pEnemy->IsActive() != bActive) pEnemy->SetActive(bActive);
+		if(bActive) pEnemy->SetCoopMirrorState(vFeetPos, fYaw, sAnim, bLoop, fAnimSpeed, lState);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleEnemySound(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sName = aBuffer.GetString();
+	tString sSound = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	iLuxEnemy *pEnemy = static_cast<iLuxEnemy*>(pMap->GetEntityByName(sName, eLuxEntityType_Enemy));
+	if(pEnemy && pEnemy->IsActive()) pEnemy->PlaySound(sSound);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleDamage(cLuxCoopBuffer &aBuffer)
+{
+	float fAmount = aBuffer.GetFloat();
+	int lStrength = aBuffer.GetInt();
+	int lType = aBuffer.GetInt();
+	bool bLethal = aBuffer.GetByte() != 0;
+	if(aBuffer.HasReadError() || lType < 0 || lType >= eLuxDamageType_LastEnum) return;
+
+	if(gpBase->mpMapHandler->MapIsLoaded()==false) return;
+	gpBase->mpPlayer->GiveDamage(fAmount, lStrength, (eLuxDamageType)lType, true, bLethal);
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxCoopNet::ShowMessage(const tWString& asText)
 {
 	gpBase->mpMessageHandler->SetMessage(asText, 0);
@@ -1344,6 +1531,7 @@ void cLuxCoopNet::SendPlayerState()
 	buffer.AddFloat(pPlayer->GetCamera()->GetYaw());
 	buffer.AddFloat(pPlayer->GetCamera()->GetPitch());
 	buffer.AddByte(lFlags);
+	buffer.AddFloat(pPlayer->GetHelperLightLevel()->GetNormalLightLevel());
 	Send(buffer, kCoopChannel_State, false);
 }
 

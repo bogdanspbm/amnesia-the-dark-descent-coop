@@ -29,6 +29,7 @@
 #include "LuxPlayerHelpers.h"
 #include "LuxInteractConnections.h"
 #include "LuxMusicHandler.h"
+#include "LuxCoopNet.h"
 #include "LuxEffectRenderer.h"
 #include "LuxMoveState_Normal.h"
 #include "LuxDebugHandler.h"
@@ -434,6 +435,13 @@ iLuxEnemy::iLuxEnemy(const tString &asName, int alID, cLuxMap *apMap, eLuxEnemyT
 
 	mbUseAnimations = true;
 
+	mbCoopTargetPartner = false;
+	mfCoopTargetCount = 0;
+	mbCoopHasMirrorState = false;
+	mvCoopMirrorPos = 0;
+	mfCoopMirrorYaw = 0;
+	mlCoopMirrorState = -1;
+
 	mfInLanternLightCount =0;
 
 	mbCausesSanityDecrease = true;
@@ -631,6 +639,15 @@ void iLuxEnemy::OnUpdate(float afTimeStep)
 	}
 
 	//////////////////////
+	// Co-op: the host runs the AI, the client only shows what the host sends
+	if(gpBase->mpCoopNet->IsEnemyMirror())
+	{
+		UpdateCoopMirror(afTimeStep);
+		return;
+	}
+	UpdateCoopTarget(afTimeStep);
+
+	//////////////////////
 	// Helpers
 	mpPathfinder->OnUpdate(afTimeStep);
 	mpMover->OnUpdate(afTimeStep);
@@ -727,7 +744,7 @@ void iLuxEnemy::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 	cLuxPlayer *pPlayer = gpBase->mpPlayer;
 
 	// Set up variables
-	iCharacterBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody();
+	iCharacterBody *pPlayerBody = GetTargetBody();
 	float fDist = cMath::Vector3Dist(pPlayerBody->GetPosition(), mpCharBody->GetPosition());
 
 	// Check if crouching
@@ -821,7 +838,7 @@ void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 
 void iLuxEnemy::ShowPlayerPosition()
 {
-	mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	mvLastKnownPlayerPos = GetTargetBody()->GetFeetPosition();
 }
 
 void iLuxEnemy::AlertOfPlayerPresence()
@@ -973,6 +990,8 @@ float iLuxEnemy::ConvertAnimToAbsoluteTime(float afRelativeTimePostion)
 cSoundEntity* iLuxEnemy::PlaySound(const tString &asName)
 {
 	if(asName=="") return NULL;
+
+	gpBase->mpCoopNet->OnEnemySound(this, asName);
 
 	cSoundEntity *pSound = mpMap->GetWorld()->CreateSoundEntity("EnemySound", asName, true);
 	if(pSound)
@@ -1375,9 +1394,7 @@ void iLuxEnemy::UpdateCharBody(float afTimeStep)
 
 void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 {
-	cLuxPlayer *pPlayer = gpBase->mpPlayer;
-
-	if(pPlayer->IsDead()) return;
+	if(TargetIsDead()) return;
 	
 	if(TriggersDisabled())
 	{
@@ -1393,23 +1410,15 @@ void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 
 	/////////////////////////////
 	// Set up variables
-	iCharacterBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody();
+	iCharacterBody *pPlayerBody = GetTargetBody();
 	
 	float fDist = cMath::Vector3Dist(pPlayerBody->GetPosition(), mpCharBody->GetPosition());
 
-	bool bLanternOn = gpBase->mpPlayer->GetHelperLantern()->IsActive();
+	bool bLanternOn = TargetLanternOn();
 
 	////////////////////////
 	// Check if crouching
-	bool bCrouching = false;
-	if(pPlayer->GetCurrentMoveState() == eLuxMoveState_Normal)
-	{
-		cLuxMoveState_Normal *pNormalMove = static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData());
-		if(pNormalMove->IsCrouching())
-		{
-			bCrouching = true;
-		}
-	}
+	bool bCrouching = TargetIsCrouching();
 
 	////////////////////////
 	// Check range
@@ -1417,7 +1426,7 @@ void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 
 	if(bLanternOn) mfSightRange *= 1.5f;
 	
-	if(bLanternOn==false && pPlayer->GetHelperLightLevel()->GetNormalLightLevel() < mfPlayerInDarknessLightLevel && pPlayer->GetAvgSpeed() < 0.05f && 
+	if(bLanternOn==false && TargetLightLevel() < mfPlayerInDarknessLightLevel && TargetAvgSpeed() < 0.05f && 
 		mbSkipVisibilityRangeHandicaps==false)
 		fMaxRange = mfDarknessSightRange;
 	
@@ -1480,7 +1489,7 @@ void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 
 void iLuxEnemy::UpdatePlayerDetected(float afTimeStep)
 {
-	if(gpBase->mpPlayer->IsDead()) return;
+	if(TargetIsDead()) return;
 
 	bool bDetected = PlayerIsDetected();
 
@@ -1500,7 +1509,7 @@ void iLuxEnemy::UpdatePlayerDetected(float afTimeStep)
 
 void iLuxEnemy::UpdatePlayerInRange(float afTimeStep)
 {
-	if(gpBase->mpPlayer->IsDead()) return;
+	if(TargetIsDead()) return;
 
 	float fDistance = DistToPlayer();
 
@@ -1621,7 +1630,7 @@ void iLuxEnemy::UpdateCheckLastPlayerPos(float afTimeStep)
 
 	if(mfLastPlayerPosCount > 0)
 	{
-		mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+		mvLastKnownPlayerPos = GetTargetBody()->GetFeetPosition();
 	}
 }
 
@@ -1717,7 +1726,7 @@ void iLuxEnemy::UpdateHallucination(float afTimeStep)
 {
 	if(mbHallucination==false || mfHealth <= 0) return;
 
-	float fDistSqr = cMath::Vector3DistSqr(mpCharBody->GetPosition(), gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+	float fDistSqr = cMath::Vector3DistSqr(mpCharBody->GetPosition(), GetTargetBody()->GetPosition());
 	if(fDistSqr < mfHallucinationEndDist * mfHallucinationEndDist)
 	{
 		FadeToSmoke(true);
@@ -1824,7 +1833,7 @@ cAINode *iLuxEnemy::GetSearchForPlayerNode(int alMaxIterations, float afMaxAngle
 		float fAngle = cMath::RandRectf(-fMaxAngle, fMaxAngle);
 
 		//Get the distance and direction to player
-		cVector3f vToPlayer = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition() - mpCharBody->GetFeetPosition();
+		cVector3f vToPlayer = GetTargetBody()->GetFeetPosition() - mpCharBody->GetFeetPosition();
 		float fToPlayerDist = vToPlayer.Length();
 		vToPlayer.Normalize();
 
@@ -1857,7 +1866,7 @@ cAINode *iLuxEnemy::GetPatrolAroundPlayerNode(int alMaxIterations, float afMaxAn
 {
 	float fMaxAngle = mfPlayerPatrolMaxAngle * afMaxAngleMul;
 
-	cVector3f vPlayerFeetPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	cVector3f vPlayerFeetPos = GetTargetBody()->GetFeetPosition();
 
 	////////////////////
 	//Iterate until a node is found or max iterations is reached.
@@ -2064,7 +2073,7 @@ cLuxProp_Object* iLuxEnemy::GetClosestFood(float afMaxDist, float afMaxHeightDis
 
 cVector3f iLuxEnemy::GetPlayerFeetPos()
 {
-	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	return GetTargetBody()->GetFeetPosition();
 }
 
 //-----------------------------------------------------------------------
@@ -2111,33 +2120,33 @@ cVector3f iLuxEnemy::GetDirection2D(const cVector3f &avPos)
 
 float iLuxEnemy::DistToPlayer()
 {
-	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
+	if(TargetIsDead()) return 100000.0f;
 
-	return DistToChar(gpBase->mpPlayer->GetCharacterBody());
+	return DistToChar(GetTargetBody());
 }
 
 float iLuxEnemy::DistToPlayer2D()
 {
-	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
+	if(TargetIsDead()) return 100000.0f;
 
-	return DistToChar2D(gpBase->mpPlayer->GetCharacterBody());
+	return DistToChar2D(GetTargetBody());
 }
 
 float iLuxEnemy::DistToPlayer2D(const cVector3f& avPos)
 {
-	return cMath::Vector2DistXZ(gpBase->mpPlayer->GetCharacterBody()->GetPosition(), avPos);
+	return cMath::Vector2DistXZ(GetTargetBody()->GetPosition(), avPos);
 }
 
 float iLuxEnemy::AbsHeightDistToPlayer()
 {
-	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
+	if(TargetIsDead()) return 100000.0f;
 
-	return AbsHeightDistToChar(gpBase->mpPlayer->GetCharacterBody());
+	return AbsHeightDistToChar(GetTargetBody());
 }
 
 cVector3f iLuxEnemy::GetDirection2DToPlayer()
 {
-	return GetDirection2D(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+	return GetDirection2D(GetTargetBody()->GetPosition());
 }
 
 //-----------------------------------------------------------------------
@@ -2186,7 +2195,7 @@ bool iLuxEnemy::IsVisibleToPlayerAtFeetPos(const cVector3f& avFeetPos)
 
 float iLuxEnemy::GetPlayerMovementTowardEnemyAmount()
 {
-	iCharacterBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody();
+	iCharacterBody *pPlayerBody = GetTargetBody();
 	
 	cVector3f vPlayerDir = pPlayerBody->GetVelocity(gpBase->mpEngine->GetStepSize());
 	vPlayerDir.y =0;
@@ -2236,8 +2245,147 @@ bool iLuxEnemy::InFOV(const cVector3f &avPos)
 
 bool iLuxEnemy::PlayerInFOV()
 {
-	return InFOV(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+	return InFOV(GetTargetBody()->GetPosition());
 }
+
+//-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
+// CO-OP
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+iCharacterBody* iLuxEnemy::GetTargetBody()
+{
+	if(mbCoopTargetPartner)
+	{
+		iCharacterBody *pPartner = gpBase->mpCoopNet->GetPartnerCharBody();
+		if(pPartner) return pPartner;
+	}
+	return gpBase->mpPlayer->GetCharacterBody();
+}
+
+bool iLuxEnemy::TargetIsDead()
+{
+	if(mbCoopTargetPartner && gpBase->mpCoopNet->GetPartnerCharBody()) return gpBase->mpCoopNet->IsPartnerDown();
+	return gpBase->mpPlayer->IsDead();
+}
+
+bool iLuxEnemy::TargetLanternOn()
+{
+	if(mbCoopTargetPartner && gpBase->mpCoopNet->GetPartnerCharBody()) return gpBase->mpCoopNet->GetPartnerLanternOn();
+	return gpBase->mpPlayer->GetHelperLantern()->IsActive();
+}
+
+bool iLuxEnemy::TargetIsCrouching()
+{
+	if(mbCoopTargetPartner && gpBase->mpCoopNet->GetPartnerCharBody()) return gpBase->mpCoopNet->GetPartnerCrouching();
+
+	cLuxPlayer *pPlayer = gpBase->mpPlayer;
+	if(pPlayer->GetCurrentMoveState() != eLuxMoveState_Normal) return false;
+	return static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData())->IsCrouching();
+}
+
+float iLuxEnemy::TargetLightLevel()
+{
+	if(mbCoopTargetPartner && gpBase->mpCoopNet->GetPartnerCharBody()) return gpBase->mpCoopNet->GetPartnerLightLevel();
+	return gpBase->mpPlayer->GetHelperLightLevel()->GetNormalLightLevel();
+}
+
+float iLuxEnemy::TargetAvgSpeed()
+{
+	if(mbCoopTargetPartner && gpBase->mpCoopNet->GetPartnerCharBody()) return gpBase->mpCoopNet->GetPartnerAvgSpeed();
+	return gpBase->mpPlayer->GetAvgSpeed();
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxEnemy::UpdateCoopTarget(float afTimeStep)
+{
+	iCharacterBody *pPartner = gpBase->mpCoopNet->GetPartnerCharBody();
+	if(pPartner==NULL)
+	{
+		mbCoopTargetPartner = false;
+		return;
+	}
+
+	mfCoopTargetCount -= afTimeStep;
+	if(mfCoopTargetCount > 0) return;
+	mfCoopTargetCount = 0.5f;
+
+	bool bLocalOk = gpBase->mpPlayer->IsDead()==false;
+	bool bPartnerOk = gpBase->mpCoopNet->IsPartnerDown()==false;
+
+	bool bTargetPartner = mbCoopTargetPartner;
+	if(bLocalOk==false && bPartnerOk)		bTargetPartner = true;
+	else if(bPartnerOk==false)				bTargetPartner = false;
+	else if(mbCanSeePlayer==false)
+	{
+		//Not seeing the current target: go for the other one if it is in sight, or clearly closer
+		iCharacterBody *pOther = mbCoopTargetPartner ? gpBase->mpPlayer->GetCharacterBody() : pPartner;
+		iCharacterBody *pCurrent = mbCoopTargetPartner ? pPartner : gpBase->mpPlayer->GetCharacterBody();
+		float fOtherDist = DistToChar(pOther);
+		float fCurrentDist = DistToChar(pCurrent);
+
+		bool bOtherSeen = fOtherDist < mfSightRange && LineOfSight(pOther->GetPosition(), pOther->GetSize(), true);
+		if(bOtherSeen || fOtherDist < fCurrentDist*0.7f) bTargetPartner = !mbCoopTargetPartner;
+	}
+
+	if(bTargetPartner != mbCoopTargetPartner)
+	{
+		mbCoopTargetPartner = bTargetPartner;
+		mlPlayerInLOSCount = 0;
+		mfLookForPlayerCount = 0;
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxEnemy::SetCoopMirrorState(const cVector3f& avFeetPos, float afYaw, const tString& asAnim, bool abLoop, float afAnimSpeed, int alState)
+{
+	//Snap on the first state or a teleport, glide otherwise
+	if(mbCoopHasMirrorState==false || cMath::Vector3DistSqr(avFeetPos, mpCharBody->GetFeetPosition()) > 3.0f*3.0f)
+	{
+		mpCharBody->SetFeetPosition(avFeetPos);
+		mpCharBody->SetYaw(afYaw);
+	}
+	mvCoopMirrorPos = avFeetPos;
+	mfCoopMirrorYaw = afYaw;
+	mbCoopHasMirrorState = true;
+
+	if(asAnim != "" && (mpCurrentAnimation==NULL || mpCurrentAnimation->GetName() != asAnim || mpCurrentAnimation->IsActive()==false))
+	{
+		PlayAnim(asAnim, abLoop, 0.3f, false, 1.0f, false, true, false);
+	}
+	if(mpCurrentAnimation) mpCurrentAnimation->SetSpeed(afAnimSpeed);
+
+	//Hunting means terror music and effects for the client too
+	if(alState != mlCoopMirrorState)
+	{
+		bool bHunt = alState == eLuxEnemyState_Hunt || alState == eLuxEnemyState_HuntPause || alState == eLuxEnemyState_HuntWander;
+		if(bHunt)	gpBase->mpPlayer->AddTerrorEnemy(this);
+		else		gpBase->mpPlayer->RemoveTerrorEnemy(this);
+		mlCoopMirrorState = alState;
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxEnemy::UpdateCoopMirror(float afTimeStep)
+{
+	if(mbCoopHasMirrorState==false) return;
+
+	mpCharBody->SetMoveSpeed(eCharDir_Forward, 0);
+	mpCharBody->SetMoveSpeed(eCharDir_Right, 0);
+
+	cVector3f vFeetPos = mpCharBody->GetFeetPosition();
+	float fT = cMath::Min(1.0f, afTimeStep * 12.0f);
+	mpCharBody->SetFeetPosition(vFeetPos + (mvCoopMirrorPos - vFeetPos) * fT);
+	mpCharBody->SetYaw(cMath::TurnAngleRad(mpCharBody->GetYaw(), mfCoopMirrorYaw, k2Pif * afTimeStep));
+}
+
+//-----------------------------------------------------------------------
 
 //-----------------------------------------------------------------------
 

@@ -25,6 +25,7 @@
 
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
+#include "LuxCoopNet.h"
 
 //-----------------------------------------------------------------------
 
@@ -307,7 +308,7 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 		if(pBody->GetUserData() && abCheckProps==false) continue;
 		if(pBody->IsCharacter())
 		{
-			if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
+			if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody() || pBody == gpBase->mpCoopNet->GetPartnerCollideBody())
 			{
 				if(abCheckPlayer == false) continue;
 			}
@@ -432,6 +433,11 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 		else if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
 		{
 			gpBase->mpPlayer->GiveDamage(fDamage,alStrength, aDamageType, true, abLethalForPlayer);
+			if(apHitPlayer) *apHitPlayer = true;
+		}
+		else if(pBody == gpBase->mpCoopNet->GetPartnerCollideBody())
+		{
+			gpBase->mpCoopNet->DamagePartner(fDamage, alStrength, aDamageType, abLethalForPlayer);
 			if(apHitPlayer) *apHitPlayer = true;
 		}
 

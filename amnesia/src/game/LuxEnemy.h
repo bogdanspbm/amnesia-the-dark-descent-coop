@@ -465,6 +465,12 @@ public:
 
 	cAnimationState* GetCurrentAnimation(){ return mpCurrentAnimation;}
 
+	//////////////////////
+	//Co-op: on the host the enemy hunts whichever player it picked; on the client it mirrors the host
+	iCharacterBody* GetTargetBody();
+	bool IsTargetingPartner(){ return mbCoopTargetPartner;}
+	void SetCoopMirrorState(const cVector3f& avFeetPos, float afYaw, const tString& asAnim, bool abLoop, float afAnimSpeed, int alState);
+
 	const tString& GetDangerMusic() { return msDangerMusic; }
 	int GetDangerMusicPrio() { return mlDangerMusicPrio; }
 
@@ -532,6 +538,13 @@ protected:
 	void UpdateAnimation(float afTimeStep);
 	void UpdateCharBody(float afTimeStep);
 	void UpdateCanSeePlayer(float afTimeStep);
+	void UpdateCoopTarget(float afTimeStep);
+	void UpdateCoopMirror(float afTimeStep);
+	bool TargetIsDead();
+	bool TargetLanternOn();
+	bool TargetIsCrouching();
+	float TargetLightLevel();
+	float TargetAvgSpeed();
 	void UpdatePlayerDetected(float afTimeStep);
 	void UpdatePlayerInRange(float afTimeStep);
 	void UpdateCheckStuckAtDoor(float afTimeStep);
@@ -629,6 +642,13 @@ protected:
 	float mfLookForPlayerCount;
 	int mlPlayerInLOSCount;
 	bool mbCanSeePlayer;
+
+	bool mbCoopTargetPartner;
+	float mfCoopTargetCount;
+	bool mbCoopHasMirrorState;
+	cVector3f mvCoopMirrorPos;
+	float mfCoopMirrorYaw;
+	int mlCoopMirrorState;
 	bool mbPlayerDetected;
 	bool mbPlayerInRange;
 

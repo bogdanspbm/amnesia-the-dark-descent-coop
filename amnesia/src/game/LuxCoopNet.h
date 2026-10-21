@@ -31,6 +31,7 @@ class iLuxEntity;
 class cLuxProp_Item;
 class cLuxProp_Lamp;
 class cLuxInventory_Item;
+class iLuxEnemy;
 
 struct _ENetHost;
 struct _ENetPeer;
@@ -61,6 +62,9 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_GiveItem,
 	eLuxCoopMsg_DropItem,
 	eLuxCoopMsg_Revive,
+	eLuxCoopMsg_EnemyStates,
+	eLuxCoopMsg_EnemySound,
+	eLuxCoopMsg_Damage,
 };
 
 //----------------------------------------------
@@ -207,6 +211,18 @@ public:
 	bool TryStartDowned();
 	bool IsDowned(){ return mbDowned; }
 
+	/////////////////////////
+	// Enemies: the host runs them and they may hunt either player
+	bool IsEnemyMirror(){ return mMode == eLuxCoopMode_Client && IsConnected(); }
+	iCharacterBody* GetPartnerCharBody();
+	bool IsPartnerDown(){ return mbPartnerDowned || mbPartnerDead; }
+	bool GetPartnerLanternOn(){ return mbPartnerLanternOn; }
+	bool GetPartnerCrouching(){ return mbPartnerCrouching; }
+	float GetPartnerLightLevel(){ return mfPartnerLightLevel; }
+	float GetPartnerAvgSpeed(){ return mfPartnerAvgSpeed; }
+	void OnEnemySound(iLuxEnemy *apEnemy, const tString& asSound);
+	void DamagePartner(float afAmount, int alStrength, eLuxDamageType aType, bool abLethal);
+
 	//Story items go to both inventories; consumables stay with whoever picks them up
 	static bool IsSharedItemType(eLuxItemType aType);
 
@@ -244,6 +260,10 @@ private:
 	void HandleGiveItem(cLuxCoopBuffer &aBuffer);
 	void HandleDropItem(cLuxCoopBuffer &aBuffer);
 	void HandleRevive(cLuxCoopBuffer &aBuffer);
+	void HandleEnemyStates(cLuxCoopBuffer &aBuffer);
+	void HandleEnemySound(cLuxCoopBuffer &aBuffer);
+	void HandleDamage(cLuxCoopBuffer &aBuffer);
+	void SendEnemyStates();
 
 	void UpdateDowned(float afTimeStep);
 	void EndDowned();
@@ -293,6 +313,13 @@ private:
 	float mfReviveCount;
 	bool mbPartnerDowned;
 	bool mbPartnerDead;
+	bool mbPartnerLanternOn;
+	bool mbPartnerCrouching;
+	float mfPartnerLightLevel;
+	float mfPartnerAvgSpeed;
+	float mfPartnerLastStateTime;
+	cVector3f mvPartnerLastPos;
+	float mfEnemySendCount;
 	bool mbSleepOverridden;
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;
