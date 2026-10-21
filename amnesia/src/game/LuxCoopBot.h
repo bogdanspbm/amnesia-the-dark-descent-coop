@@ -111,6 +111,7 @@ private:
 
 	bool GetTargetPos(const tString& asTarget, cVector3f& avPos);
 	bool GetNearestEnemy(cVector3f& avPos);
+	bool PickIdleLook(cVector3f& avLook);
 	bool PickWanderGoal(float afRadius, cVector3f& avGoal);
 	bool PickFleeGoal(const cVector3f& avEnemyPos, cVector3f& avGoal);
 	void SetupPathfinding();
@@ -142,6 +143,8 @@ private:
 	std::list<cVector3f> mlstPath;
 	cVector3f mvLastPos;
 	float mfStuckTime;
+	int mlStuckCount;
+	int mlSidestep;		//-1/1 while sidestepping out of a stuck spot
 	bool mbRunning;
 	bool mbCrouching;
 

@@ -24,6 +24,8 @@
 #include "LuxPlayerHelpers.h"
 #include "LuxAreaNodes.h"
 #include "LuxEnemy.h"
+#include "LuxMapHelper.h"
+#include "LuxProp_Item.h"
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTANTS
@@ -33,7 +35,10 @@ static const float kBotStartDelay = 1.5f;			//Let the map settle (and the partne
 static const float kBotTurnSpeed = 4.0f;			//How fast the view closes the gap to where it wants to look (1/s)
 static const float kBotMaxTurnRate = cMath::ToRad(160);
 static const float kBotArriveDist = 0.6f;
-static const float kBotStuckTime = 1.2f;
+static const float kBotStuckCheckTime = 0.8f;			//Progress is measured over this window
+static const float kBotStuckMinMove = 0.25f;			//Less than this in a window counts as stuck
+static const float kBotDefaultGoToTime = 30.0f;			//Steps without a Time still give up eventually
+static const float kBotDefaultFleeTime = 20.0f;
 static const float kBotRepathTime = 1.0f;
 static const float kBotWalkPitch = cMath::ToRad(-6);	//Eyes a little down while walking, like a person watching the floor
 
@@ -81,6 +86,8 @@ cLuxCoopBot::cLuxCoopBot()
 	mpAStar = NULL;
 	mpPathWorld = NULL;
 	mfStuckTime = 0;
+	mlStuckCount = 0;
+	mlSidestep = 0;
 	mbRunning = false;
 	mbCrouching = false;
 	mfLookTargetTime = 0;
@@ -324,7 +331,7 @@ bool cLuxCoopBot::UpdateStep(float afTimeStep)
 			if(GetTargetPos(step.msTarget, mvStepGoal)) PathTo(mvStepGoal);
 		}
 		bool bArrived = MoveTowards(mvStepGoal, step.mfDist > 0 ? step.mfDist : kBotArriveDist, afTimeStep);
-		if(bArrived || (step.mfTime > 0 && mfStepTime > step.mfTime))
+		if(bArrived || mfStepTime > (step.mfTime > 0 ? step.mfTime : kBotDefaultGoToTime))
 		{
 			StopMoving();
 			if(step.mbRun) { mbRunning = false; gpBase->mpPlayer->Run(false); }
@@ -428,7 +435,7 @@ bool cLuxCoopBot::UpdateStep(float afTimeStep)
 		if(step.mbLookBack && bEnemy && mfLookTargetTime <= 0 && Rand(0,1) < afTimeStep*0.35f)
 			SetLookTarget(vEnemy + cVector3f(0,1.4f,0), Rand(0.5f, 0.9f));
 
-		bool bOver = bArrived || (step.mfTime > 0 && mfStepTime >= step.mfTime);
+		bool bOver = bArrived || mfStepTime >= (step.mfTime > 0 ? step.mfTime : kBotDefaultFleeTime);
 		if(bOver)
 		{
 			StopMoving();
@@ -456,6 +463,19 @@ bool cLuxCoopBot::UpdateStep(float afTimeStep)
 	///////////////////////////
 	case eLuxCoopBotAction_Interact:
 	{
+		//Notes and diaries open the journal, which would stop the scene
+		iLuxEntity *pEntity = gpBase->mpMapHandler->GetCurrentMap()->GetEntityByName(step.msTarget);
+		if(mfStepTime <= afTimeStep && pEntity && pEntity->GetEntityType()==eLuxEntityType_Prop &&
+			static_cast<iLuxProp*>(pEntity)->GetPropType()==eLuxPropType_Item)
+		{
+			eLuxItemType type = static_cast<cLuxProp_Item*>(pEntity)->GetItemType();
+			if(type == eLuxItemType_Note || type == eLuxItemType_Diary)
+			{
+				Log("Coop bot: not opening '%s', it would open the journal\n", step.msTarget.c_str());
+				mbPausing = true;
+			}
+		}
+
 		//Aim at it for a moment, press, hold a little, let go
 		cVector3f vPos;
 		if(GetTargetPos(step.msTarget, vPos)) SetLookTarget(vPos, 0.2f);
@@ -517,25 +537,43 @@ bool cLuxCoopBot::MoveTowards(const cVector3f& avGoal, float afArriveDist, float
 	pPlayer->Move(eCharDir_Forward, fFwd);
 	pPlayer->Move(eCharDir_Right, fRight);
 
-	//Stuck on a corner or a prop: sidestep, then skip the point
+	//Stuck on a corner or a prop: measured as too little progress over a short window.
+	//First sidestep (one side for the whole try), then skip the point, then give up.
+	if(mlSidestep != 0) pPlayer->Move(eCharDir_Right, (float)mlSidestep);
+
+	mfStuckTime += afTimeStep;
+	if(mfStuckTime < kBotStuckCheckTime) return false;
+
 	float fMoved = cMath::Vector3Dist(vPos, mvLastPos);
 	mvLastPos = vPos;
-	if(fMoved < 0.15f * afTimeStep)	mfStuckTime += afTimeStep;
-	else							mfStuckTime = cMath::Max(0.0f, mfStuckTime - afTimeStep);
-
-	if(mfStuckTime > kBotStuckTime)
+	mfStuckTime = 0;
+	if(fMoved >= kBotStuckMinMove)
 	{
-		pPlayer->Move(eCharDir_Right, Rand(0,1) < 0.5f ? 1.0f : -1.0f);
-		if(mfStuckTime > kBotStuckTime*2.5f)
+		mlStuckCount = 0;
+		mlSidestep = 0;
+		return false;
+	}
+
+	++mlStuckCount;
+	if(mlStuckCount == 1)
+	{
+		mlSidestep = Rand(0,1) < 0.5f ? 1 : -1;
+	}
+	else if(mlStuckCount == 2)
+	{
+		mlSidestep = -mlSidestep;
+	}
+	else
+	{
+		mlSidestep = 0;
+		mlStuckCount = 0;
+		if(mlstPath.size() > 1)	mlstPath.pop_front();
+		else
 		{
-			mfStuckTime = 0;
-			if(mlstPath.size() > 1)	mlstPath.pop_front();
-			else
-			{
-				Log("Coop bot: stuck, giving up on (%s)\n", avGoal.ToString().c_str());
-				mlstPath.clear();
-				return true;
-			}
+			Log("Coop bot: stuck, giving up on (%s)\n", avGoal.ToString().c_str());
+			mlstPath.clear();
+			mfGlanceCount = 0;
+			return true;
 		}
 	}
 	return false;
@@ -547,6 +585,9 @@ bool cLuxCoopBot::PathTo(const cVector3f& avGoal)
 {
 	mlstPath.clear();
 	mfStuckTime = 0;
+	mlStuckCount = 0;
+	mlSidestep = 0;
+	mvLastPos = GetFeetPos();
 
 	if(mpAStar)
 	{
@@ -565,9 +606,13 @@ bool cLuxCoopBot::PathTo(const cVector3f& avGoal)
 
 void cLuxCoopBot::StopMoving()
 {
+	//Look somewhere open right away instead of at whatever we walked up to
+	if(mvMoveDir.Length() > 0.5f) mfGlanceCount = 0;
 	mlstPath.clear();
 	mvMoveDir = 0;
 	mfStuckTime = 0;
+	mlStuckCount = 0;
+	mlSidestep = 0;
 }
 
 //-----------------------------------------------------------------------
@@ -611,16 +656,16 @@ void cLuxCoopBot::UpdateLook(float afTimeStep)
 	}
 	if(bHaveDir==false)
 	{
-		//Standing still: look around the room
+		//Standing still: look around the room, never at a wall
 		mfGlanceCount -= afTimeStep;
 		if(mfGlanceCount <= 0)
 		{
 			mfGlanceCount = Rand(1.5f, 3.5f);
-			float fYaw = pCam->GetYaw() + Rand(-1.4f, 1.4f);
-			cVector3f vDir(-sinf(fYaw), Rand(-0.25f, 0.15f), -cosf(fYaw));
-			SetLookTarget(pCam->GetPosition() + vDir*5, mfGlanceCount);
+			cVector3f vLook;
+			if(PickIdleLook(vLook)) SetLookTarget(vLook, mfGlanceCount);
 		}
-		return;
+		if(mfLookTargetTime <= 0) return;
+		vWantDir = mvLookTarget - pCam->GetPosition();
 	}
 
 	/////////////////////////
@@ -648,6 +693,42 @@ void cLuxCoopBot::UpdateLook(float afTimeStep)
 	//The player doubles these (see cLuxPlayer::AddYaw)
 	pPlayer->AddYaw(fYawStep * 0.5f);
 	pPlayer->AddPitch(fPitchStep * 0.5f);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxCoopBot::PickIdleLook(cVector3f& avLook)
+{
+	cCamera *pCam = gpBase->mpPlayer->GetCamera();
+	cVector3f vEye = pCam->GetPosition();
+	cLuxMapHelper *pHelper = gpBase->mpMapHelper;
+
+	//The partner, if close and in sight
+	cVector3f vPartnerHead = mvPartnerPos + cVector3f(0,1.5f,0);
+	if(mbPartnerReady && cMath::Vector3Dist(vPartnerHead, vEye) < 15 && Rand(0,1) < 0.4f &&
+		pHelper->CheckLineOfSight(vEye, vPartnerHead, false))
+	{
+		avLook = vPartnerHead;
+		return true;
+	}
+
+	//Open directions: try a spread of yaws around the current one, nearest first, and keep the first with 3 m of free view
+	float fYaw = pCam->GetYaw();
+	float fStart = Rand(0,1) < 0.5f ? 1.0f : -1.0f;
+	for(int i=1; i<=8; ++i)
+	{
+		float fTry = fYaw + fStart * (float)((i+1)/2) * cMath::ToRad(40) * ((i%2)==1 ? 1.0f : -1.0f) + Rand(-0.2f, 0.2f);
+		cVector3f vDir(-sinf(fTry), Rand(-0.2f, 0.1f), -cosf(fTry));
+		if(pHelper->CheckLineOfSight(vEye, vEye + vDir*3.0f, false))
+		{
+			avLook = vEye + vDir*5.0f;
+			return true;
+		}
+	}
+
+	//Boxed in: turn around
+	avLook = vEye + cVector3f(sinf(fYaw), 0, cosf(fYaw)) * 5.0f;
+	return true;
 }
 
 //-----------------------------------------------------------------------
