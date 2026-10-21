@@ -654,6 +654,7 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mlSaveOutPos = 0;
 	mlSaveInReceived = 0;
 	mbContinuePending = false;
+	mbBotSceneLoaded = false;
 }
 
 //-----------------------------------------------------------------------
@@ -705,6 +706,8 @@ void cLuxCoopNet::LoadMainConfig()
 	mAvatarSettings.msLanternMesh = pCfg->GetString("Player", "AvatarLanternMesh", "");
 	mAvatarSettings.msLanternBone = pCfg->GetString("Player", "AvatarLanternBone", "");
 	mAvatarSettings.msLanternOffset = pCfg->GetString("Player", "AvatarLanternOffset", "");
+
+	msBotScene = pCfg->GetString("Dev", "Scene", "");
 
 	int lRate = cMath::Max(5, pCfg->GetInt("Network", "StateRate", 20));
 	mfStateSendInterval = 1.0f / (float)lRate;
@@ -1225,6 +1228,8 @@ void cLuxCoopNet::Update(float afTimeStep)
 			JoinSteamLobby(msName, sJoinLobby);
 	}
 
+	UpdateBot(afTimeStep);
+
 	if(mpTransport==NULL) return;
 
 	mfTime += afTimeStep;
@@ -1274,6 +1279,26 @@ void cLuxCoopNet::Update(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
+void cLuxCoopNet::UpdateBot(float afTimeStep)
+{
+	if(msBotScene == "") return;
+	if(gpBase->mpMapHandler->MapIsLoaded()==false) return;
+	if(gpBase->mpEngine->GetUpdater()->GetCurrentContainerName() != "Default") return;	//Not while a menu is open
+
+	//The scene is read once we know which part we play
+	if(mbBotSceneLoaded==false)
+	{
+		mbBotSceneLoaded = true;
+		if(mBot.LoadScene(msBotScene, mMode != eLuxCoopMode_Client)==false) msBotScene = "";
+		return;
+	}
+
+	bool bPartner = IsConnected() && mAvatar.IsShown();
+	mBot.Update(afTimeStep, bPartner, bPartner ? mAvatar.GetPosition() : cVector3f(0));
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxCoopNet::OnQuit()
 {
 	StopNetwork();
@@ -1283,6 +1308,7 @@ void cLuxCoopNet::OnQuit()
 
 void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 {
+	mBot.OnMapEnter();
 	if(IsActive()==false) return;
 
 	m_mapSentBodies.clear();

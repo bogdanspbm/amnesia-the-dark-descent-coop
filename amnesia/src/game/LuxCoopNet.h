@@ -24,6 +24,7 @@
 
 #include "LuxBase.h"
 #include "LuxCoopTransport.h"
+#include "LuxCoopBot.h"
 
 //----------------------------------------------
 
@@ -341,6 +342,9 @@ public:
 	bool LoadContinueGame();		//Called by the menu's Continue; false means a normal load
 	const tString& GetLobbyNotice(){ return msLobbyNotice; }
 
+	//Scene bot, for filming: 0 none or not started yet, 1 playing, 2 finished
+	int GetBotSceneState(){ return mBot.IsFinished() ? 2 : (mBot.IsRunning() ? 1 : 0); }
+
 	//Steam lobbies; Steam is started the first time one of these is used
 	bool HostSteam(const tString& asName, bool abPublic);
 	bool JoinSteamLobby(const tString& asName, const tString& asLobbyId);
@@ -387,6 +391,7 @@ private:
 	void UpdateSaveSend();
 	void SendStartGame(eLuxCoopStartKind aKind);
 	void StepAsideFromPartner();
+	void UpdateBot(float afTimeStep);
 	void SendEnemyStates();
 
 	void UpdateDowned(float afTimeStep);
@@ -475,6 +480,10 @@ private:
 	size_t mlSaveInReceived;
 	bool mbContinuePending;
 	tString msLobbyNotice;
+
+	tString msBotScene;		//Dev/Scene in coop.cfg: a scene file the bot plays, for filming
+	bool mbBotSceneLoaded;
+	cLuxCoopBot mBot;
 
 	cLuxCoopAvatar mAvatar;
 };
