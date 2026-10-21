@@ -127,6 +127,7 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 {
 	mpMesh = NULL;
 	mpLight = NULL;
+	mpBody = NULL;
 	mvPos = 0;
 	mvTargetPos = 0;
 	mfYaw = 0;
@@ -138,7 +139,7 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile)
+void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile, bool abPhysicalBody)
 {
 	if(apMap==NULL || mpMesh) return;
 
@@ -157,6 +158,19 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile)
 	mpLight->SetRadius(5.0f);
 	mpLight->SetCastShadows(false);
 
+	//On the host the partner needs a real body so it pushes props, blocks doors and collides with the host
+	if(abPhysicalBody)
+	{
+		cVector3f vSize = gpBase->mpGameCfg->GetVector3f("Player_Body","Size",cVector3f(0.8f, 1.8f, 0.8f));
+		mpBody = apMap->GetPhysicsWorld()->CreateCharacterBody("CoopPartner", vSize);
+		mpBody->SetMass(gpBase->mpGameCfg->GetFloat("Player_Body","Mass",70));
+		mpBody->SetMaxPushMass(gpBase->mpGameCfg->GetFloat("Player_Body","MaxPushMass",0));
+		mpBody->SetPushForce(gpBase->mpGameCfg->GetFloat("Player_Body","PushForce",0));
+		mpBody->SetMaxStepSize(gpBase->mpGameCfg->GetFloat("Player_Body","MaxStepSize",0));
+		mpBody->SetGravityActive(false);		//Height comes from the partner, gravity would fight it
+		mpBody->SetActive(false);
+	}
+
 	mbHasState = false;
 	mpMesh->SetVisible(false);
 	mpLight->SetVisible(false);
@@ -171,6 +185,7 @@ void cLuxCoopAvatar::Destroy(cLuxMap *apMap)
 		cWorld *pWorld = apMap->GetWorld();
 		if(mpMesh) pWorld->DestroyMeshEntity(mpMesh);
 		if(mpLight) pWorld->DestroyLight(mpLight);
+		if(mpBody) apMap->GetPhysicsWorld()->DestroyCharacterBody(mpBody);
 	}
 	OnWorldDestroyed();
 }
@@ -179,6 +194,7 @@ void cLuxCoopAvatar::OnWorldDestroyed()
 {
 	mpMesh = NULL;
 	mpLight = NULL;
+	mpBody = NULL;
 	mbHasState = false;
 }
 
@@ -196,6 +212,7 @@ void cLuxCoopAvatar::SetTarget(const cVector3f& avFeetPos, float afYaw, bool abL
 	{
 		mvPos = mvTargetPos;
 		mfYaw = mfTargetYaw;
+		if(mpBody) mpBody->SetFeetPosition(mvTargetPos);
 	}
 	mbHasState = true;
 }
@@ -209,7 +226,15 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 	bool bShow = mbHasState && mbVisible;
 	mpMesh->SetVisible(bShow);
 	mpLight->SetVisible(bShow && mbLanternOn);
+	if(mpBody) mpBody->SetActive(bShow);
 	if(bShow==false) return;
+
+	//Steer the body with a velocity instead of placing it, so it pushes what it walks into
+	if(mpBody)
+	{
+		cVector3f vToTarget = mvTargetPos - mpBody->GetFeetPosition();
+		mpBody->SetForceVelocity(vToTarget * 10.0f);
+	}
 
 	//States arrive at ~20 Hz, so close most of the gap within about one packet
 	float fT = cMath::Min(1.0f, afTimeStep * 15.0f);
@@ -368,7 +393,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 	if(IsActive()==false) return;
 
 	m_mapSentBodies.clear();
-	mAvatar.Create(apMap, msAvatarMesh);
+	mAvatar.Create(apMap, msAvatarMesh, IsHost());
 	if(IsConnected()) SendMapInfo();
 }
 
@@ -391,7 +416,7 @@ void cLuxCoopNet::CreateWorldEntities(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
-	mAvatar.Create(apMap, msAvatarMesh);
+	mAvatar.Create(apMap, msAvatarMesh, IsHost());
 }
 
 //-----------------------------------------------------------------------

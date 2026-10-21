@@ -111,7 +111,7 @@ class cLuxCoopAvatar
 public:
 	cLuxCoopAvatar();
 
-	void Create(cLuxMap *apMap, const tString& asMeshFile);
+	void Create(cLuxMap *apMap, const tString& asMeshFile, bool abPhysicalBody);
 	void Destroy(cLuxMap *apMap);
 	void OnWorldDestroyed();
 
@@ -119,12 +119,14 @@ public:
 	void Update(float afTimeStep);
 
 	bool IsCreated(){ return mpMesh != NULL; }
+	iCharacterBody* GetCharacterBody(){ return mpBody; }
 
 private:
 	void ApplyTransform();
 
 	cMeshEntity *mpMesh;
 	cLightPoint *mpLight;
+	iCharacterBody *mpBody;
 
 	cVector3f mvPos;
 	cVector3f mvTargetPos;
