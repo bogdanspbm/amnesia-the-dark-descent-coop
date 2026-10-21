@@ -35,12 +35,16 @@ set(VERSION "1.3.1")
 
 add_subdirectory(game game)
 
-if(APPLE)
-    add_subdirectory(launcher-macosx launcher)
-else()
-    add_subdirectory(launcher launcher)
-endif()
+# The settings launcher is not needed for the game (and the macOS one misses its prefix header)
+OPTION(AMNESIA_BUILD_LAUNCHER "Build the settings launcher" ON)
+if(AMNESIA_BUILD_LAUNCHER)
+    if(APPLE)
+        add_subdirectory(launcher-macosx launcher)
+    else()
+        add_subdirectory(launcher launcher)
+    endif()
 
-add_custom_target(GameRelease
-    DEPENDS Amnesia Launcher
-)
+    add_custom_target(GameRelease
+        DEPENDS Amnesia Launcher
+    )
+endif()
