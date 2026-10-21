@@ -101,7 +101,10 @@ public:
 	float mfTime;
 };
 
-typedef std::map<int, cLuxCoopSentBody> tLuxCoopSentBodyMap;
+//Bodies are keyed by entity name and body index; ids of entities created at runtime can differ between the two games
+typedef std::pair<tString, int> tLuxCoopBodyKey;
+typedef std::map<tLuxCoopBodyKey, cLuxCoopSentBody> tLuxCoopSentBodyMap;
+typedef std::map<tLuxCoopBodyKey, float> tLuxCoopOwnedBodyMap;
 
 //----------------------------------------------
 
@@ -114,7 +117,7 @@ class cLuxCoopAvatar
 public:
 	cLuxCoopAvatar();
 
-	void Create(cLuxMap *apMap, const tString& asMeshFile, bool abPhysicalBody);
+	void Create(cLuxMap *apMap, const tString& asMeshFile);
 	void Destroy(cLuxMap *apMap);
 	void OnWorldDestroyed();
 
@@ -122,6 +125,7 @@ public:
 	void Update(float afTimeStep);
 
 	bool IsCreated(){ return mpMesh != NULL; }
+	bool IsShown(){ return mpMesh != NULL && mbHasState && mbVisible; }
 	iCharacterBody* GetCharacterBody(){ return mpBody; }
 
 private:
@@ -169,6 +173,11 @@ public:
 	const tString& GetPartnerMap(){ return msPartnerMap; }
 
 	/////////////////////////
+	// Player hooks
+	iPhysicsBody* GetPartnerCollideBody();
+	cVector3f AdjustStartPos(const cVector3f& avFeetPos, float afYaw);
+
+	/////////////////////////
 	// Lobby
 	bool Host(const tString& asName, int alPort);
 	bool Join(const tString& asName, const tString& asAddress, int alPort);
@@ -200,7 +209,7 @@ private:
 	void SendMapInfo();
 	void SendBodyStates();
 	void SendOwnedBodyStates();
-	bool IsClientOwned(int alKey);
+	bool IsClientOwned(const tLuxCoopBodyKey& aKey);
 	void AddBodyEntry(cLuxCoopBuffer &aBuffer, iLuxProp *apProp, int alBodyIdx);
 	iPhysicsBody* GetInteractBody();
 	void SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEntries, int alCount);
@@ -226,7 +235,7 @@ private:
 	bool mbSleepOverridden;
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;
-	std::map<int, float> m_mapClientOwnedBodies;
+	tLuxCoopOwnedBodyMap m_mapClientOwnedBodies;
 
 	tString msPartnerName;
 	tString msPartnerMap;

@@ -36,7 +36,7 @@
 // CONSTANTS
 //////////////////////////////////////////////////////////////////////////
 
-static const int kCoopProtocolVersion = 1;
+static const int kCoopProtocolVersion = 2;
 static const int kCoopChannel_Reliable = 0;
 static const int kCoopChannel_State = 1;
 static const int kCoopChannelNum = 2;
@@ -47,7 +47,7 @@ static const unsigned char kCoopStateFlag_Dead = 0x04;
 
 static const float kCoopBodySendInterval = 1.0f / 20.0f;
 static const float kCoopBodyResendTime = 2.0f;			//Resend still bodies now and then in case a packet was lost
-static const int kCoopMaxBodiesPerPacket = 20;			//57 bytes each, keeps packets under the usual MTU
+static const int kCoopMaxBodiesPerPacket = 14;			//~57 bytes plus the name each, keeps packets under the usual MTU
 static const int kCoopMaxBodiesPerEntity = 32;
 static const float kCoopOwnershipLinger = 1.0f;		//Client keeps authority this long after letting go, so throws land on its side
 
@@ -143,7 +143,7 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile, bool abPhysicalBody)
+void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile)
 {
 	if(apMap==NULL || mpMesh) return;
 
@@ -162,8 +162,7 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile, bool abPh
 	mpLight->SetRadius(5.0f);
 	mpLight->SetCastShadows(false);
 
-	//On the host the partner needs a real body so it pushes props, blocks doors and collides with the host
-	if(abPhysicalBody)
+	//The partner needs a real body so it blocks the local player, pushes props and triggers "Player" areas
 	{
 		cVector3f vSize = gpBase->mpGameCfg->GetVector3f("Player_Body","Size",cVector3f(0.8f, 1.8f, 0.8f));
 		mpBody = apMap->GetPhysicsWorld()->CreateCharacterBody("CoopPartner", vSize);
@@ -341,6 +340,39 @@ void cLuxCoopNet::SaveMainConfig()
 
 //-----------------------------------------------------------------------
 
+iPhysicsBody* cLuxCoopNet::GetPartnerCollideBody()
+{
+	if(IsConnected()==false || mAvatar.IsShown()==false) return NULL;
+
+	iCharacterBody *pBody = mAvatar.GetCharacterBody();
+	return pBody ? pBody->GetCurrentBody() : NULL;
+}
+
+//-----------------------------------------------------------------------
+
+cVector3f cLuxCoopNet::AdjustStartPos(const cVector3f& avFeetPos, float afYaw)
+{
+	//Both games use the same start node, so the client steps aside instead of spawning inside the host
+	if(mMode != eLuxCoopMode_Client) return avFeetPos;
+
+	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
+	if(pBody==NULL) return avFeetPos;
+
+	cVector3f vRight = cMath::MatrixMul(cMath::MatrixRotateY(afYaw), cVector3f(1,0,0));
+	cVector3f vFwd = cMath::MatrixMul(cMath::MatrixRotateY(afYaw), cVector3f(0,0,1));
+	const float fDist = 1.1f;
+	cVector3f vOffsets[] = { vRight*fDist, vRight*-fDist, vFwd*fDist, vFwd*-fDist, (vRight+vFwd)*fDist, (vRight-vFwd)*fDist };
+
+	for(size_t i=0; i<sizeof(vOffsets)/sizeof(vOffsets[0]); ++i)
+	{
+		cVector3f vPos = avFeetPos + vOffsets[i];
+		if(pBody->CheckCharacterFits(vPos, true, -1, NULL, 0.01f)) return vPos;
+	}
+	return avFeetPos;
+}
+
+//-----------------------------------------------------------------------
+
 bool cLuxCoopNet::Host(const tString& asName, int alPort)
 {
 	StopNetwork();
@@ -455,7 +487,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 
 	m_mapSentBodies.clear();
 	m_mapClientOwnedBodies.clear();
-	mAvatar.Create(apMap, msAvatarMesh, IsHost());
+	mAvatar.Create(apMap, msAvatarMesh);
 	if(IsConnected()) SendMapInfo();
 }
 
@@ -478,7 +510,7 @@ void cLuxCoopNet::CreateWorldEntities(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
-	mAvatar.Create(apMap, msAvatarMesh, IsHost());
+	mAvatar.Create(apMap, msAvatarMesh);
 }
 
 //-----------------------------------------------------------------------
@@ -693,7 +725,7 @@ void cLuxCoopNet::HandleBodyStates(cLuxCoopBuffer &aBuffer)
 
 	for(int i=0; i<lCount; ++i)
 	{
-		int lEntityID = aBuffer.GetInt();
+		tString sEntity = aBuffer.GetString();
 		int lBodyIdx = aBuffer.GetByte();
 		cVector3f vPos = aBuffer.GetVector3f();
 		cQuaternion qRot = aBuffer.GetQuaternion();
@@ -701,11 +733,11 @@ void cLuxCoopNet::HandleBodyStates(cLuxCoopBuffer &aBuffer)
 		cVector3f vAngVel = aBuffer.GetVector3f();
 		if(aBuffer.HasReadError()) return;
 
-		iLuxProp *pProp = static_cast<iLuxProp*>(pMap->GetEntityByID(lEntityID, eLuxEntityType_Prop));
+		iLuxProp *pProp = static_cast<iLuxProp*>(pMap->GetEntityByName(sEntity, eLuxEntityType_Prop));
 		if(pProp==NULL || lBodyIdx >= pProp->GetBodyNum()) continue;
 
 		//The client is authoritative for bodies it holds: the host takes its states, the client ignores the host's
-		int lKey = lEntityID * kCoopMaxBodiesPerEntity + lBodyIdx;
+		tLuxCoopBodyKey lKey(sEntity, lBodyIdx);
 		if(IsHost())					m_mapClientOwnedBodies[lKey] = mfTime;
 		else if(IsClientOwned(lKey))	continue;
 
@@ -847,7 +879,7 @@ void cLuxCoopNet::SendBodyStates()
 			cQuaternion qRot;
 			qRot.FromRotationMatrix(mtxBody.GetRotation());
 
-			int lKey = pProp->GetID() * kCoopMaxBodiesPerEntity + i;
+			tLuxCoopBodyKey lKey(pProp->GetName(), i);
 			if(IsClientOwned(lKey)) continue;
 
 			tLuxCoopSentBodyMap::iterator it = m_mapSentBodies.find(lKey);
@@ -892,13 +924,13 @@ void cLuxCoopNet::SendOwnedBodyStates()
 		for(int i=0; i<pProp->GetBodyNum() && i<kCoopMaxBodiesPerEntity; ++i)
 		{
 			if(pProp->GetBody(i) == pInteractBody)
-				m_mapClientOwnedBodies[pProp->GetID() * kCoopMaxBodiesPerEntity + i] = mfTime;
+				m_mapClientOwnedBodies[tLuxCoopBodyKey(pProp->GetName(), i)] = mfTime;
 		}
 	}
 
 	cLuxCoopBuffer entries;
 	int lCount = 0;
-	std::map<int, float>::iterator it = m_mapClientOwnedBodies.begin();
+	tLuxCoopOwnedBodyMap::iterator it = m_mapClientOwnedBodies.begin();
 	while(it != m_mapClientOwnedBodies.end())
 	{
 		if(mfTime - it->second > kCoopOwnershipLinger)
@@ -907,11 +939,11 @@ void cLuxCoopNet::SendOwnedBodyStates()
 			continue;
 		}
 
-		int lEntityID = it->first / kCoopMaxBodiesPerEntity;
-		int lBodyIdx = it->first % kCoopMaxBodiesPerEntity;
+		tString sEntity = it->first.first;
+		int lBodyIdx = it->first.second;
 		++it;
 
-		iLuxProp *pProp = static_cast<iLuxProp*>(pMap->GetEntityByID(lEntityID, eLuxEntityType_Prop));
+		iLuxProp *pProp = static_cast<iLuxProp*>(pMap->GetEntityByName(sEntity, eLuxEntityType_Prop));
 		if(pProp==NULL || lBodyIdx >= pProp->GetBodyNum()) continue;
 
 		AddBodyEntry(entries, pProp, lBodyIdx);
@@ -929,9 +961,9 @@ void cLuxCoopNet::SendOwnedBodyStates()
 
 //-----------------------------------------------------------------------
 
-bool cLuxCoopNet::IsClientOwned(int alKey)
+bool cLuxCoopNet::IsClientOwned(const tLuxCoopBodyKey& aKey)
 {
-	std::map<int, float>::iterator it = m_mapClientOwnedBodies.find(alKey);
+	tLuxCoopOwnedBodyMap::iterator it = m_mapClientOwnedBodies.find(aKey);
 	return it != m_mapClientOwnedBodies.end() && mfTime - it->second <= kCoopOwnershipLinger;
 }
 
@@ -944,7 +976,7 @@ void cLuxCoopNet::AddBodyEntry(cLuxCoopBuffer &aBuffer, iLuxProp *apProp, int al
 	cQuaternion qRot;
 	qRot.FromRotationMatrix(mtxBody.GetRotation());
 
-	aBuffer.AddInt(apProp->GetID());
+	aBuffer.AddString(apProp->GetName());
 	aBuffer.AddByte((unsigned char)alBodyIdx);
 	aBuffer.AddVector3f(mtxBody.GetTranslation());
 	aBuffer.AddQuaternion(qRot);

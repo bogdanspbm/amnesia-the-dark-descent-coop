@@ -235,7 +235,7 @@ bool iLuxCollideCallbackContainer::CheckEntityCollision(iLuxEntity*apEntity, cLu
 		for(int j=0; j<apEntity->GetBodyNum(); ++j)
 		{
 			iPhysicsBody *pBodyA = GetBody(i);
-			iPhysicsBody *pBodyB = apEntity->GetBody(i);
+			iPhysicsBody *pBodyB = apEntity->GetBody(j);
 
 			if(cMath::CheckBVIntersection(*pBodyA->GetBoundingVolume(), *pBodyB->GetBoundingVolume()))
 			{

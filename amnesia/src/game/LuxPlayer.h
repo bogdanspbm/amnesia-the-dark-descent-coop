@@ -167,8 +167,8 @@ public:
 	void ClearTerrorEnemies();
 	void StopTerrorSound();
 
-	int GetBodyNum(){ return 1;}
-	iPhysicsBody* GetBody(int alIdx){ return mpCharBody->GetCurrentBody();};
+	int GetBodyNum();
+	iPhysicsBody* GetBody(int alIdx);
 
 	bool IsInWater(){ return mbIsInWater;}
 	void SetIsInWater(bool abX){ mbIsInWater = abX;}

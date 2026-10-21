@@ -47,6 +47,7 @@
 #include "LuxPlayerHands.h"
 
 #include "LuxAreaNodes.h"
+#include "LuxCoopNet.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -818,6 +819,24 @@ void cLuxPlayer::MoveHeadPosAdd(eLuxHeadPosAdd aType, const cVector3f& avGoal, f
 
 //-----------------------------------------------------------------------
 
+int cLuxPlayer::GetBodyNum()
+{
+	//In co-op the partner counts as "Player" too, so area callbacks fire for whoever walks in
+	return (gpBase->mpCoopNet && gpBase->mpCoopNet->GetPartnerCollideBody()) ? 2 : 1;
+}
+
+iPhysicsBody* cLuxPlayer::GetBody(int alIdx)
+{
+	if(alIdx == 1 && gpBase->mpCoopNet)
+	{
+		iPhysicsBody *pPartnerBody = gpBase->mpCoopNet->GetPartnerCollideBody();
+		if(pPartnerBody) return pPartnerBody;
+	}
+	return mpCharBody->GetCurrentBody();
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxPlayer::PlaceAtStartNode(cLuxNode_PlayerStart *apNode)
 {
 	ChangeState(eLuxPlayerState_Normal);
@@ -826,7 +845,9 @@ void cLuxPlayer::PlaceAtStartNode(cLuxNode_PlayerStart *apNode)
 	if(mpSpawnPS->IsActive())
 		mpSpawnPS->RespawnAll(); //Needs to respawn all!
 
-	mpCharBody->SetFeetPosition(apNode->GetPosition());
+	cVector3f vStartPos = apNode->GetPosition();
+	if(gpBase->mpCoopNet) vStartPos = gpBase->mpCoopNet->AdjustStartPos(vStartPos, apNode->GetAngle());
+	mpCharBody->SetFeetPosition(vStartPos);
 	mpCharBody->SetYaw(apNode->GetAngle());
 	mpCamera->SetYaw(apNode->GetAngle());
 	mpCamera->SetPitch(0);
