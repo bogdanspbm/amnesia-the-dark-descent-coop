@@ -48,6 +48,7 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_MapInfo,
 	eLuxCoopMsg_BodyStates,
 	eLuxCoopMsg_StartGame,
+	eLuxCoopMsg_ChangeMap,
 };
 
 //----------------------------------------------
@@ -176,6 +177,10 @@ public:
 	// Player hooks
 	iPhysicsBody* GetPartnerCollideBody();
 	cVector3f AdjustStartPos(const cVector3f& avFeetPos, float afYaw);
+	void OnLocalChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound);
+
+	//True while a partner's action is being replayed, so it is not sent back
+	bool IsApplyingRemote(){ return mbApplyingRemote; }
 
 	/////////////////////////
 	// Lobby
@@ -199,6 +204,7 @@ private:
 	void HandleMapInfo(cLuxCoopBuffer &aBuffer);
 	void HandleBodyStates(cLuxCoopBuffer &aBuffer);
 	void HandleStartGame(cLuxCoopBuffer &aBuffer);
+	void HandleChangeMap(cLuxCoopBuffer &aBuffer);
 
 	void SaveLobbySettings();
 	tWString GetConfigFile();
@@ -232,6 +238,7 @@ private:
 	float mfReconnectCount;
 	float mfBodySendCount;
 	float mfTime;
+	bool mbApplyingRemote;
 	bool mbSleepOverridden;
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;

@@ -107,6 +107,8 @@ public:
 	void ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound);
 
 	bool MapIsLoaded(){ return mpCurrentMap != NULL;}
+	bool IsChangingMap(){ return mMapChangeData.mbActive;}
+	const tString& GetChangeMapFile(){ return mMapChangeData.msMapFile;}
 
 	cLuxMap* LoadMap(const tString& asName, bool abLoadEntities);
 	void DestroyMap(cLuxMap* apMap, bool abRunScript);

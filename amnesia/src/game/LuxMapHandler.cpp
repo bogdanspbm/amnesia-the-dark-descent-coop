@@ -33,6 +33,7 @@
 
 #include "LuxEnemy.h"
 #include "LuxAchievementHandler.h"
+#include "LuxCoopNet.h"
 
 //////////////////////////////////////////////////////////////////////////
 // SOUND ENTITY CALLBACK
@@ -394,6 +395,9 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 
 void cLuxMapHandler::ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound)
 {
+	//The partner follows through level doors and scripted map changes
+	gpBase->mpCoopNet->OnLocalChangeMap(asMapName, asStartPos, asStartSound, asEndSound);
+
 	mMapChangeData.mbActive = true;
 	mMapChangeData.msMapFile = cString::SetFileExt(asMapName, "map");
 	mMapChangeData.msStartPos = asStartPos;

@@ -285,6 +285,7 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mfTime = 0;
 	mbSleepOverridden = false;
 	mbSleepWhenOutOfFocus = true;
+	mbApplyingRemote = false;
 }
 
 //-----------------------------------------------------------------------
@@ -369,6 +370,21 @@ cVector3f cLuxCoopNet::AdjustStartPos(const cVector3f& avFeetPos, float afYaw)
 		if(pBody->CheckCharacterFits(vPos, true, -1, NULL, 0.01f)) return vPos;
 	}
 	return avFeetPos;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::OnLocalChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_ChangeMap);
+	buffer.AddString(asMapName);
+	buffer.AddString(asStartPos);
+	buffer.AddString(asStartSound);
+	buffer.AddString(asEndSound);
+	Send(buffer, kCoopChannel_Reliable, true);
 }
 
 //-----------------------------------------------------------------------
@@ -656,6 +672,7 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_MapInfo:		if(mbHandshakeDone) HandleMapInfo(buffer); break;
 	case eLuxCoopMsg_BodyStates:	if(mbHandshakeDone) HandleBodyStates(buffer); break;
 	case eLuxCoopMsg_StartGame:		if(mbHandshakeDone && IsHost()==false) HandleStartGame(buffer); break;
+	case eLuxCoopMsg_ChangeMap:		if(mbHandshakeDone) HandleChangeMap(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -768,6 +785,30 @@ void cLuxCoopNet::HandleStartGame(cLuxCoopBuffer &aBuffer)
 	Log("Coop: host started the game\n");
 	gpBase->mbHardMode = bHardMode;
 	StartLocalGame();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleChangeMap(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sStartPos = aBuffer.GetString();
+	tString sStartSound = aBuffer.GetString();
+	tString sEndSound = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMapHandler *pMapHandler = gpBase->mpMapHandler;
+	if(pMapHandler->MapIsLoaded()==false) return;
+
+	//Both games often run the same script at once; then each is already on its way
+	tString sMapFile = cString::ToLowerCase(cString::SetFileExt(sMap, "map"));
+	if(pMapHandler->IsChangingMap() && cString::ToLowerCase(cString::GetFileName(pMapHandler->GetChangeMapFile())) == cString::GetFileName(sMapFile)) return;
+	if(pMapHandler->IsChangingMap()==false && GetCurrentMapFile() == cString::GetFileName(sMapFile)) return;
+
+	Log("Coop: partner went to map '%s', following\n", sMap.c_str());
+	mbApplyingRemote = true;
+	pMapHandler->ChangeMap(sMap, sStartPos, sStartSound, sEndSound);
+	mbApplyingRemote = false;
 }
 
 //-----------------------------------------------------------------------
