@@ -26,6 +26,7 @@
 #include "LuxMessageHandler.h"
 #include "LuxHelpFuncs.h"
 #include "LuxGlobalDataHandler.h"
+#include "LuxCoopNet.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -248,6 +249,8 @@ bool cLuxProp_Lamp::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 		RunCallbackFunc("OnIgnite");
 		
 		SetLit(true, true);
+
+		gpBase->mpCoopNet->OnLocalLampLit(this);
 	}
 
 	return true;

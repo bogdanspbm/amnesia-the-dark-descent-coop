@@ -27,6 +27,7 @@
 #include "LuxProp.h"
 #include "LuxProp_Lamp.h"
 #include "LuxMessageHandler.h"
+#include "LuxCoopNet.h"
 
 
 
@@ -205,6 +206,7 @@ void cLuxPlayerState_UseItem::UseItem()
             // Running the script MAY destroy this item so "Backup" the check flag.
             bool bAutoDestroy = pCallback->mbAutoDestroy;
 			tString sName = pCallback->msName;
+			gpBase->mpCoopNet->OnLocalUseItem(pCallback->msItem, pCallback->msEntity);
             pMap->RunScript(pCallback->msFunction+ "(\"" + pCallback->msItem + "\", \"" + pCallback->msEntity + "\")" );
 
 			if(bAutoDestroy)

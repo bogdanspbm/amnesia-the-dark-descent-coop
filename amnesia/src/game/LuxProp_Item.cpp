@@ -26,6 +26,7 @@
 #include "LuxItemType.h"
 #include "LuxMessageHandler.h"
 #include "LuxEffectRenderer.h"
+#include "LuxCoopNet.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -155,10 +156,13 @@ bool cLuxProp_Item::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	//Picked up item
 	bool bRemoveProp=true;	
 
-	gpBase->mpInventory->AddItem(msName, mItemType, msSubItemTypeName, msImageFile, mfAmount, msVal,msExtraVal ,&bRemoveProp);
+	cLuxInventory_Item *pInvItem = gpBase->mpInventory->AddItem(msName, mItemType, msSubItemTypeName, msImageFile, mfAmount, msVal,msExtraVal ,&bRemoveProp);
+	if(pInvItem) pInvItem->SetEntityFile(msFileName);
 
 	if(bRemoveProp)
 	{
+		gpBase->mpCoopNet->OnLocalPickup(this);
+
 		mpMap->DestroyEntity(this);
 
 		gpBase->mpHelpFuncs->PlayGuiSoundData("ui/pick_"+msPickSound, eSoundEntryType_World);

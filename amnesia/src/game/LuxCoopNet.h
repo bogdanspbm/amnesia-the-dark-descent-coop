@@ -27,6 +27,10 @@
 //----------------------------------------------
 
 class iLuxProp;
+class iLuxEntity;
+class cLuxProp_Item;
+class cLuxProp_Lamp;
+class cLuxInventory_Item;
 
 struct _ENetHost;
 struct _ENetPeer;
@@ -49,6 +53,13 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_BodyStates,
 	eLuxCoopMsg_StartGame,
 	eLuxCoopMsg_ChangeMap,
+	eLuxCoopMsg_Pickup,
+	eLuxCoopMsg_Interact,
+	eLuxCoopMsg_LampLit,
+	eLuxCoopMsg_UseItem,
+	eLuxCoopMsg_Combine,
+	eLuxCoopMsg_GiveItem,
+	eLuxCoopMsg_DropItem,
 };
 
 //----------------------------------------------
@@ -127,6 +138,7 @@ public:
 
 	bool IsCreated(){ return mpMesh != NULL; }
 	bool IsShown(){ return mpMesh != NULL && mbHasState && mbVisible; }
+	const cVector3f& GetPosition(){ return mvPos; }
 	iCharacterBody* GetCharacterBody(){ return mpBody; }
 
 private:
@@ -179,6 +191,18 @@ public:
 	cVector3f AdjustStartPos(const cVector3f& avFeetPos, float afYaw);
 	void OnLocalChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound);
 
+	/////////////////////////
+	// Shared world: local actions replayed in the partner's game
+	void OnLocalPickup(cLuxProp_Item *apItem);
+	void OnLocalInteract(iLuxEntity *apEntity);
+	void OnLocalLampLit(cLuxProp_Lamp *apLamp);
+	void OnLocalUseItem(const tString& asItem, const tString& asEntity);
+	void OnLocalCombine(const tString& asItemA, const tString& asItemB);
+	void GiveOrDropItem(cLuxInventory_Item *apItem);
+
+	//Story items go to both inventories; consumables stay with whoever picks them up
+	static bool IsSharedItemType(eLuxItemType aType);
+
 	//True while a partner's action is being replayed, so it is not sent back
 	bool IsApplyingRemote(){ return mbApplyingRemote; }
 
@@ -205,6 +229,16 @@ private:
 	void HandleBodyStates(cLuxCoopBuffer &aBuffer);
 	void HandleStartGame(cLuxCoopBuffer &aBuffer);
 	void HandleChangeMap(cLuxCoopBuffer &aBuffer);
+	void HandlePickup(cLuxCoopBuffer &aBuffer);
+	void HandleInteract(cLuxCoopBuffer &aBuffer);
+	void HandleLampLit(cLuxCoopBuffer &aBuffer);
+	void HandleUseItem(cLuxCoopBuffer &aBuffer);
+	void HandleCombine(cLuxCoopBuffer &aBuffer);
+	void HandleGiveItem(cLuxCoopBuffer &aBuffer);
+	void HandleDropItem(cLuxCoopBuffer &aBuffer);
+
+	void ShowMessage(const tWString& asText);
+	tWString GetItemDisplayName(eLuxItemType aType, const tString& asSubType);
 
 	void SaveLobbySettings();
 	tWString GetConfigFile();
@@ -239,6 +273,7 @@ private:
 	float mfBodySendCount;
 	float mfTime;
 	bool mbApplyingRemote;
+	int mlDropCount;
 	bool mbSleepOverridden;
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;

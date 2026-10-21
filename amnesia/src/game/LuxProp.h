@@ -271,6 +271,7 @@ public:
 	//////////////////////
 	//Properties
 	eLuxPropType GetPropType(){ return mPropType;}
+	const tString& GetFileName(){ return msFileName;}
 	
 	void SetHealth(float afX);
 	float GetHealth(){ return mfHealth;}

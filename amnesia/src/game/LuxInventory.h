@@ -68,6 +68,10 @@ public:
 
 	tString msImageFile;
 
+	//Entity file the item was picked up from, used to drop it in co-op. Not saved.
+	void SetEntityFile(const tString& asFile){ msEntityFile = asFile;}
+	const tString& GetEntityFile(){ return msEntityFile;}
+
 	float GetAmount(){ return mfAmount;}
 	int GetCount(){ return mlCount;}
 	const tString& GetGameNameEntry(){ return msGameNameEntry;}
@@ -95,6 +99,7 @@ private:
 	float mfAmount;
 	tString msGameNameEntry;
 	tString msGameDescEntry;
+	tString msEntityFile;
 };
 
 //----------------------------------------------
@@ -220,6 +225,7 @@ public:
 							const tString& asFunction, bool abAutoDestroy);
 	void RemoveCombineCallback(const tString& asName);
 	cLuxCombineItemsCallback* GetCombineCallback(const tString& asItemA, const tString& asItemB);
+	void RunCombineCallback(cLuxCombineItemsCallback *apComb);
 
 	void RunScript(const tString& asCommand);
 	bool RecompileScript(tString *apOutput);

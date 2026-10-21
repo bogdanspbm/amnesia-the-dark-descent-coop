@@ -26,6 +26,7 @@
 #include "LuxItemType.h"
 #include "LuxEntity.h"
 #include "LuxMessageHandler.h"
+#include "LuxCoopNet.h"
 #include "LuxHintHandler.h"
 #include "LuxHelpFuncs.h"
 #include "LuxEffectHandler.h"
@@ -295,6 +296,13 @@ cLuxInventory_Item* cLuxInventory_Slot::GetItem()
 
 bool cLuxInventory_Slot::OnMouseDown(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	//Right click hands the item to the co-op partner, or drops it
+	if(GetItem() && (aData.mlVal & eGuiMouseButton_Right) && gpBase->mpCoopNet->IsConnected())
+	{
+		gpBase->mpCoopNet->GiveOrDropItem(GetItem());
+		return true;
+	}
+
 	if(GetItem())
 	{
 		const cVector2f &vSize = apWidget->GetSize();
@@ -323,24 +331,8 @@ bool cLuxInventory_Slot::OnMouseUp(iWidget* apWidget, const cGuiMessageData& aDa
 			cLuxCombineItemsCallback *pComb = mpInventory->GetCombineCallback(pItem->GetName(), pPickedItem->GetName());
 			if(pComb)
 			{
-				bool bAutoDestroy = pComb->mbAutoDestroy;
-				tString sCombName = pComb->msName;
-				mpInventory->RunScript(pComb->msFunction+ "(\"" + pComb->msItemA + "\", \"" + pComb->msItemB + "\")" );
-				
-				if(bAutoDestroy) 
-				{
-					tLuxCombineItemsCallbackListIt combIt = mpInventory->mlstCombineCallbacks.begin();
-                    for(; combIt != mpInventory->mlstCombineCallbacks.end(); ++combIt)
-					{
-						cLuxCombineItemsCallback *pCombCallback = *combIt;
-						if(pCombCallback == pComb && sCombName == pCombCallback->msName)
-						{
-							mpInventory->mlstCombineCallbacks.erase(combIt);
-							hplDelete(pComb);
-							break;
-						}
-					}
-				}
+				gpBase->mpCoopNet->OnLocalCombine(pComb->msItemA, pComb->msItemB);
+				mpInventory->RunCombineCallback(pComb);
 			}
 			else
 			{
@@ -1172,6 +1164,30 @@ void cLuxInventory::RemoveItem(const tString& asName)
 	}
 	Warning("Item '%s' could not be found when trying to remove it!\n", asName.c_str());
 }
+
+void cLuxInventory::RunCombineCallback(cLuxCombineItemsCallback *apComb)
+{
+	bool bAutoDestroy = apComb->mbAutoDestroy;
+	tString sCombName = apComb->msName;
+	RunScript(apComb->msFunction+ "(\"" + apComb->msItemA + "\", \"" + apComb->msItemB + "\")" );
+	
+	if(bAutoDestroy) 
+	{
+		tLuxCombineItemsCallbackListIt combIt = mlstCombineCallbacks.begin();
+		for(; combIt != mlstCombineCallbacks.end(); ++combIt)
+		{
+			cLuxCombineItemsCallback *pCombCallback = *combIt;
+			if(pCombCallback == apComb && sCombName == pCombCallback->msName)
+			{
+				mlstCombineCallbacks.erase(combIt);
+				hplDelete(apComb);
+				break;
+			}
+		}
+	}
+}
+
+//-----------------------------------------------------------------------
 
 void cLuxInventory::RemoveItem(cLuxInventory_Item *apItem)
 {

@@ -25,6 +25,7 @@
 #include "LuxMoveState.h"
 #include "LuxEffectRenderer.h"
 #include "LuxPlayerHands.h"
+#include "LuxCoopNet.h"
 
 
 
@@ -164,6 +165,7 @@ bool iLuxPlayerState_DefaultBase::OnDoAction(eLuxPlayerAction aAction,bool abPre
 			{
 				mpEntityInFocus->OnInteract(mpBodyInFocus,mvFocusPos);
 				mpEntityInFocus->RunInteractCallbackFunc();
+				gpBase->mpCoopNet->OnLocalInteract(mpEntityInFocus);
 			}
 			return false;
 		}

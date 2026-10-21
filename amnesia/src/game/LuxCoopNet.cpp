@@ -27,6 +27,12 @@
 #include "LuxProp.h"
 #include "LuxPlayerState_Interact.h"
 #include "LuxMainMenu.h"
+#include "LuxProp_Item.h"
+#include "LuxProp_Lamp.h"
+#include "LuxProp_Button.h"
+#include "LuxInventory.h"
+#include "LuxMessageHandler.h"
+#include "LuxHelpFuncs.h"
 
 #include <enet/enet.h>
 #include <string.h>
@@ -286,6 +292,7 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mbSleepOverridden = false;
 	mbSleepWhenOutOfFocus = true;
 	mbApplyingRemote = false;
+	mlDropCount = 0;
 }
 
 //-----------------------------------------------------------------------
@@ -385,6 +392,143 @@ void cLuxCoopNet::OnLocalChangeMap(const tString& asMapName, const tString& asSt
 	buffer.AddString(asStartSound);
 	buffer.AddString(asEndSound);
 	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxCoopNet::IsSharedItemType(eLuxItemType aType)
+{
+	return	aType == eLuxItemType_Puzzle || aType == eLuxItemType_Note || aType == eLuxItemType_Diary ||
+			aType == eLuxItemType_Lantern || aType == eLuxItemType_HandObject;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::OnLocalPickup(cLuxProp_Item *apItem)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_Pickup);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(apItem->GetName());
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+void cLuxCoopNet::OnLocalInteract(iLuxEntity *apEntity)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	//Pickups and level doors have their own messages
+	if(apEntity->GetEntityType() == eLuxEntityType_Prop)
+	{
+		eLuxPropType propType = static_cast<iLuxProp*>(apEntity)->GetPropType();
+		if(propType == eLuxPropType_Item || propType == eLuxPropType_LevelDoor) return;
+	}
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_Interact);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(apEntity->GetName());
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+void cLuxCoopNet::OnLocalLampLit(cLuxProp_Lamp *apLamp)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_LampLit);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(apLamp->GetName());
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+void cLuxCoopNet::OnLocalUseItem(const tString& asItem, const tString& asEntity)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_UseItem);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(asItem);
+	buffer.AddString(asEntity);
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+void cLuxCoopNet::OnLocalCombine(const tString& asItemA, const tString& asItemB)
+{
+	if(IsConnected()==false || mbApplyingRemote) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_Combine);
+	buffer.AddString(asItemA);
+	buffer.AddString(asItemB);
+	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::GiveOrDropItem(cLuxInventory_Item *apItem)
+{
+	cLuxInventory *pInventory = gpBase->mpInventory;
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(IsConnected()==false || pMap==NULL) return;
+
+	if(IsSharedItemType(apItem->GetType()))
+	{
+		pInventory->SetMessageText(_W("Story items are shared: your partner has this one too."), 0);
+		return;
+	}
+
+	////////////////////////
+	// Partner close by: hand it over
+	cVector3f vFeetPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	if(mAvatar.IsShown() && cMath::Vector3Dist(mAvatar.GetPosition(), vFeetPos) < 3.0f)
+	{
+		cLuxCoopBuffer buffer;
+		buffer.AddByte(eLuxCoopMsg_GiveItem);
+		buffer.AddInt(apItem->GetType());
+		buffer.AddString(apItem->GetSubType());
+		buffer.AddString(cString::GetFileName(apItem->GetImageName()));
+		buffer.AddFloat(apItem->GetAmount());
+		buffer.AddString(apItem->GetStringVal());
+		buffer.AddString(apItem->GetExtraStringVal());
+		buffer.AddString(apItem->GetEntityFile());
+		Send(buffer, kCoopChannel_Reliable, true);
+
+		pInventory->SetMessageText(_W("Given to ") + cString::To16Char(msPartnerName) + _W(": ") + GetItemDisplayName(apItem->GetType(), apItem->GetSubType()), 0);
+		pInventory->RemoveItem(apItem);
+		return;
+	}
+
+	////////////////////////
+	// Otherwise drop it in front of the player, in both games
+	if(apItem->GetEntityFile() == "")
+	{
+		pInventory->SetMessageText(_W("This item can't be dropped. Stand next to your partner and right click to hand it over."), 0);
+		return;
+	}
+
+	cCamera *pCam = gpBase->mpPlayer->GetCamera();
+	cVector3f vPos = pCam->GetPosition() + pCam->GetForward()*0.6f - cVector3f(0, 0.3f, 0);
+	tString sName = tString("coop_drop_") + (IsHost() ? "h" : "c") + cString::ToString(++mlDropCount) + "_" + cString::ToString((int)(mfTime*1000.0f));
+	tString sFile = apItem->GetEntityFile();
+
+	cMatrixf mtxTransform = cMatrixf::Identity;
+	mtxTransform.SetTranslation(vPos);
+	pMap->CreateEntity(sName, sFile, mtxTransform, 1);
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_DropItem);
+	buffer.AddString(GetCurrentMapFile());
+	buffer.AddString(sName);
+	buffer.AddString(sFile);
+	buffer.AddVector3f(vPos);
+	Send(buffer, kCoopChannel_Reliable, true);
+
+	pInventory->SetMessageText(_W("Dropped: ") + GetItemDisplayName(apItem->GetType(), apItem->GetSubType()), 0);
+	pInventory->RemoveItem(apItem);
 }
 
 //-----------------------------------------------------------------------
@@ -673,6 +817,13 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_BodyStates:	if(mbHandshakeDone) HandleBodyStates(buffer); break;
 	case eLuxCoopMsg_StartGame:		if(mbHandshakeDone && IsHost()==false) HandleStartGame(buffer); break;
 	case eLuxCoopMsg_ChangeMap:		if(mbHandshakeDone) HandleChangeMap(buffer); break;
+	case eLuxCoopMsg_Pickup:		if(mbHandshakeDone) HandlePickup(buffer); break;
+	case eLuxCoopMsg_Interact:		if(mbHandshakeDone) HandleInteract(buffer); break;
+	case eLuxCoopMsg_LampLit:		if(mbHandshakeDone) HandleLampLit(buffer); break;
+	case eLuxCoopMsg_UseItem:		if(mbHandshakeDone) HandleUseItem(buffer); break;
+	case eLuxCoopMsg_Combine:		if(mbHandshakeDone) HandleCombine(buffer); break;
+	case eLuxCoopMsg_GiveItem:		if(mbHandshakeDone) HandleGiveItem(buffer); break;
+	case eLuxCoopMsg_DropItem:		if(mbHandshakeDone) HandleDropItem(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -809,6 +960,181 @@ void cLuxCoopNet::HandleChangeMap(cLuxCoopBuffer &aBuffer)
 	mbApplyingRemote = true;
 	pMapHandler->ChangeMap(sMap, sStartPos, sStartSound, sEndSound);
 	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandlePickup(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sName = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	iLuxEntity *pEntity = pMap->GetEntityByName(sName, eLuxEntityType_Prop);
+	if(pEntity==NULL || static_cast<iLuxProp*>(pEntity)->GetPropType() != eLuxPropType_Item) return;
+	cLuxProp_Item *pItem = static_cast<cLuxProp_Item*>(pEntity);
+
+	mbApplyingRemote = true;
+
+	if(IsSharedItemType(pItem->GetItemType()))
+	{
+		cLuxInventory_Item *pInvItem = gpBase->mpInventory->AddItem(pItem->GetName(), pItem->GetItemType(), pItem->GetSubItemTypeName(), pItem->GetImageFile(),
+																	pItem->GetAmount(), pItem->GetStringVal(), pItem->GetExtraStringVal(), NULL);
+		if(pInvItem) pInvItem->SetEntityFile(pItem->GetFileName());
+
+		ShowMessage(cString::To16Char(msPartnerName) + _W(" found: ") + GetItemDisplayName(pItem->GetItemType(), pItem->GetSubItemTypeName()));
+	}
+
+	//The scripts react to the pickup in both games
+	pItem->RunCallbackFunc("OnPickup");
+	pItem->RunInteractCallbackFunc();
+	pMap->DestroyEntity(pItem);
+
+	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleInteract(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sName = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	iLuxEntity *pEntity = pMap->GetEntityByName(sName);
+	if(pEntity==NULL) return;
+
+	mbApplyingRemote = true;
+
+	//Buttons only flip a state; everything you grab is already moved by the body sync
+	if(pEntity->GetEntityType() == eLuxEntityType_Prop && static_cast<iLuxProp*>(pEntity)->GetPropType() == eLuxPropType_Button)
+	{
+		pEntity->OnInteract(NULL, 0);
+	}
+	pEntity->RunInteractCallbackFunc();
+
+	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleLampLit(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sName = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	iLuxEntity *pEntity = pMap->GetEntityByName(sName, eLuxEntityType_Prop);
+	if(pEntity==NULL || static_cast<iLuxProp*>(pEntity)->GetPropType() != eLuxPropType_Lamp) return;
+	cLuxProp_Lamp *pLamp = static_cast<cLuxProp_Lamp*>(pEntity);
+
+	mbApplyingRemote = true;
+	pLamp->RunCallbackFunc("OnIgnite");
+	pLamp->SetLit(true, true);
+	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleUseItem(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sItem = aBuffer.GetString();
+	tString sEntity = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	cLuxUseItemCallback *pCallback = pMap->GetUseItemCallback(sItem, sEntity);
+	if(pCallback==NULL) return;
+
+	mbApplyingRemote = true;
+	bool bAutoDestroy = pCallback->mbAutoDestroy;
+	tString sName = pCallback->msName;
+	pMap->RunScript(pCallback->msFunction+ "(\"" + pCallback->msItem + "\", \"" + pCallback->msEntity + "\")" );
+	if(bAutoDestroy) pMap->RemoveUseItemCallback(pCallback, sName);
+	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleCombine(cLuxCoopBuffer &aBuffer)
+{
+	tString sItemA = aBuffer.GetString();
+	tString sItemB = aBuffer.GetString();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxCombineItemsCallback *pComb = gpBase->mpInventory->GetCombineCallback(sItemA, sItemB);
+	if(pComb==NULL) return;
+
+	mbApplyingRemote = true;
+	gpBase->mpInventory->RunCombineCallback(pComb);
+	mbApplyingRemote = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleGiveItem(cLuxCoopBuffer &aBuffer)
+{
+	eLuxItemType type = (eLuxItemType)aBuffer.GetInt();
+	tString sSubType = aBuffer.GetString();
+	tString sImage = aBuffer.GetString();
+	float fAmount = aBuffer.GetFloat();
+	tString sVal = aBuffer.GetString();
+	tString sExtraVal = aBuffer.GetString();
+	tString sFile = aBuffer.GetString();
+	if(aBuffer.HasReadError() || type < 0 || type >= eLuxItemType_LastEnum) return;
+
+	mbApplyingRemote = true;
+	tString sName = "coop_given_" + sSubType + "_" + cString::ToString(++mlDropCount);
+	cLuxInventory_Item *pInvItem = gpBase->mpInventory->AddItem(sName, type, sSubType, sImage, fAmount, sVal, sExtraVal, NULL);
+	if(pInvItem) pInvItem->SetEntityFile(sFile);
+	mbApplyingRemote = false;
+
+	gpBase->mpHelpFuncs->PlayGuiSoundData("ui_use_oil", eSoundEntryType_Gui);
+	ShowMessage(cString::To16Char(msPartnerName) + _W(" gave you: ") + GetItemDisplayName(type, sSubType));
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleDropItem(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	tString sName = aBuffer.GetString();
+	tString sFile = aBuffer.GetString();
+	cVector3f vPos = aBuffer.GetVector3f();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile() || pMap->GetEntityByName(sName) != NULL) return;
+
+	cMatrixf mtxTransform = cMatrixf::Identity;
+	mtxTransform.SetTranslation(vPos);
+	pMap->CreateEntity(sName, sFile, mtxTransform, 1);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::ShowMessage(const tWString& asText)
+{
+	gpBase->mpMessageHandler->SetMessage(asText, 0);
+}
+
+tWString cLuxCoopNet::GetItemDisplayName(eLuxItemType aType, const tString& asSubType)
+{
+	if(aType == eLuxItemType_Note)	return _W("a note");
+	if(aType == eLuxItemType_Diary)	return _W("a diary");
+	return kTranslate("Inventory", "ItemName_"+asSubType);
 }
 
 //-----------------------------------------------------------------------

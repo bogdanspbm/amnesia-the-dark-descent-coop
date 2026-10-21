@@ -28,6 +28,7 @@
 #include "LuxEntity.h"
 #include "LuxJournal.h"
 #include "LuxCompletionCountHandler.h"
+#include "LuxCoopNet.h"
 #include "LuxHelpFuncs.h"
 #include "LuxHintHandler.h"
 
@@ -155,7 +156,7 @@ bool cLuxItemType_Note::BeforeAddItem(cLuxInventory_Item *apItem)
 
 	ProgLog(eLuxProgressLogLevel_Medium, "Picked up note "+ apItem->GetStringVal());
 
-	if(apItem->GetAmount() > 0)
+	if(apItem->GetAmount() > 0 && gpBase->mpCoopNet->IsApplyingRemote()==false)
 	{
 		gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
 		gpBase->mpJournal->SetForceInstantExit(true);
@@ -213,7 +214,7 @@ bool cLuxItemType_Diary::BeforeAddItem(cLuxInventory_Item *apItem)
 		pMap->RunScript(sCallbackFunc+"(\""+apItem->GetName()+ "\","+ cString::ToString(lDiaryIdx)+")" );
 	}
 
-	if(mbShowJournalOnPickup)
+	if(mbShowJournalOnPickup && gpBase->mpCoopNet->IsApplyingRemote()==false)
 	{
 		gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
 		gpBase->mpJournal->SetForceInstantExit(true);
