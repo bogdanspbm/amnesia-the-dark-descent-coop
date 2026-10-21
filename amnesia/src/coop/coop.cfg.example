@@ -3,10 +3,11 @@
      The host must allow UDP port 27960 through the firewall.
      Sections are top-level elements (like the game's own .cfg files); don't wrap them in a root element. -->
 <Network Mode="host" Address="127.0.0.1" Port="27960" StateRate="20" />
-<!-- AvatarModel: an .ent (mesh plus animations) or a bare mesh. Animations are found by name:
+<!-- AvatarModel: an .ent (mesh plus animations) or a bare mesh. The default coop_partner.ent is the mod's own model
+       in AvatarDir (default _coop/partner); without it the partner falls back to alexander.ent. Animations are found by name:
        Idle Walk Run CrouchIdle CrouchWalk, the same with a Lantern suffix (IdleLantern ...), Hurt Downed Death.
        Missing ones fall back to the nearest one; the game's own .ent files work too (idle/walk/run in the name).
-     AvatarYawOffset: degrees to turn the model if it faces the wrong way.
+     AvatarYawOffset: degrees to turn the model if it faces the wrong way (alexander.ent needs 180).
      AvatarLanternMesh / AvatarLanternBone: a mesh hung on that bone while the partner's lantern is out.
      AvatarLanternOffset: where the light sits, relative to the bone (or to the feet without one). -->
-<Player Name="Player" AvatarModel="alexander.ent" AvatarYawOffset="0" AvatarLanternMesh="" AvatarLanternBone="" />
+<Player Name="Player" AvatarModel="coop_partner.ent" AvatarDir="_coop/partner" AvatarYawOffset="0" AvatarLanternMesh="" AvatarLanternBone="" />

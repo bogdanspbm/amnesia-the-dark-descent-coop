@@ -66,6 +66,8 @@ static const float kCoopReviveHealth = 30.0f;
 
 static const float kCoopCheckPointCatchUpDist = 10.0f;	//How much farther from a new checkpoint than the partner before being brought over
 
+static const char* kCoopFallbackAvatar = "alexander.ent";
+
 static const float kCoopEnemySendInterval = 1.0f / 15.0f;
 static const int kCoopMaxEnemiesPerPacket = 12;
 
@@ -204,14 +206,21 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSettings)
+void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aConfigSettings)
 {
 	if(apMap==NULL || mpMesh) return;
 
 	cWorld *pWorld = apMap->GetWorld();
 	cResources *pResources = gpBase->mpEngine->GetResources();
-	mfYawOffset = aSettings.mfYawOffset;
-	const tString& sModelFile = aSettings.msModel;
+	cLuxCoopAvatarSettings settings = aConfigSettings;
+	tString sModelFile = settings.msModel;
+
+	//The mod's own model may not be installed; Alexander is always there
+	if(pResources->GetFileSearcher()->GetFilePath(sModelFile) == _W("") && sModelFile != kCoopFallbackAvatar)
+	{
+		Warning("Coop: partner model '%s' not found, using '%s'\n", sModelFile.c_str(), kCoopFallbackAvatar);
+		sModelFile = kCoopFallbackAvatar;
+	}
 
 	////////////////////////
 	// The model is an .ent (mesh plus its animations) or a bare mesh
@@ -249,20 +258,23 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSetti
 	{
 		cXmlElement *pModelData = pEntDoc->GetFirstElement("ModelData");
 		LoadEntityAnimations(pWorld, pModelData->GetFirstElement("Animations"), sEntPath);
+		ReadEntitySettings(pEntDoc->GetFirstElement("CoopAvatar"), settings);
 		pResources->DestroyXmlDocument(pEntDoc);
 	}
+	mfYawOffset = settings.mfYawOffset;
 
 	////////////////////////
 	// Lantern: a mesh in the hand plus its light
-	mvLanternOffset = aSettings.mvLanternOffset;
-	mpLanternBone = aSettings.msLanternBone != "" ? mpMesh->GetBoneStateFromName(aSettings.msLanternBone) : NULL;
-	if(aSettings.msLanternBone != "" && mpLanternBone==NULL)
-		Warning("Coop: partner model has no bone '%s' for the lantern\n", aSettings.msLanternBone.c_str());
+	mpLanternBone = settings.msLanternBone != "" ? mpMesh->GetBoneStateFromName(settings.msLanternBone) : NULL;
+	if(settings.msLanternBone != "" && mpLanternBone==NULL)
+		Warning("Coop: partner model has no bone '%s' for the lantern\n", settings.msLanternBone.c_str());
+	if(settings.msLanternOffset != "")	mvLanternOffset = cString::ToVector3f(settings.msLanternOffset.c_str(), 0);
+	else								mvLanternOffset = mpLanternBone ? cVector3f(0) : cVector3f(0, 1.4f, 0);
 
 	mpLanternMesh = NULL;
-	if(aSettings.msLanternMesh != "" && mpLanternBone)
+	if(settings.msLanternMesh != "" && mpLanternBone)
 	{
-		cMesh *pLanternMesh = pResources->GetMeshManager()->CreateMesh(aSettings.msLanternMesh);
+		cMesh *pLanternMesh = pResources->GetMeshManager()->CreateMesh(settings.msLanternMesh);
 		if(pLanternMesh)
 		{
 			mpLanternMesh = pWorld->CreateMeshEntity("coop_partner_lantern_mesh", pLanternMesh, false);
@@ -270,7 +282,7 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSetti
 		}
 		else
 		{
-			Warning("Coop: could not load partner lantern mesh '%s'\n", aSettings.msLanternMesh.c_str());
+			Warning("Coop: could not load partner lantern mesh '%s'\n", settings.msLanternMesh.c_str());
 		}
 	}
 
@@ -295,6 +307,19 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSetti
 	mpMesh->SetVisible(false);
 	mpLight->SetVisible(false);
 	if(mpLanternMesh) mpLanternMesh->SetVisible(false);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopAvatar::ReadEntitySettings(cXmlElement *apElem, cLuxCoopAvatarSettings &aSettings)
+{
+	//A model made for the mod says how it faces and where its hand is; coop.cfg still wins when set there
+	if(apElem==NULL) return;
+
+	aSettings.mfYawOffset += cMath::ToRad(apElem->GetAttributeFloat("YawOffset", 0));
+	if(aSettings.msLanternMesh == "")	aSettings.msLanternMesh = apElem->GetAttributeString("LanternMesh", "");
+	if(aSettings.msLanternBone == "")	aSettings.msLanternBone = apElem->GetAttributeString("LanternBone", "");
+	if(aSettings.msLanternOffset == "")	aSettings.msLanternOffset = apElem->GetAttributeString("LanternOffset", "");
 }
 
 //-----------------------------------------------------------------------
@@ -569,9 +594,10 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	msAddress = "127.0.0.1";
 	mlPort = 27960;
 	msName = "Player";
-	mAvatarSettings.msModel = "alexander.ent";
+	mAvatarSettings.msModel = "coop_partner.ent";
+	mAvatarSettings.msModelDir = "_coop/partner";
 	mAvatarSettings.mfYawOffset = 0;
-	mAvatarSettings.mvLanternOffset = cVector3f(0, 1.4f, 0);
+	mbAvatarDirAdded = false;
 	mlHurtCount = 0;
 	mfLastHealth = -1;
 	mfStateSendInterval = 1.0f / 20.0f;
@@ -640,10 +666,11 @@ void cLuxCoopNet::LoadMainConfig()
 	mlPort = pCfg->GetInt("Network", "Port", 27960);
 	msName = pCfg->GetString("Player", "Name", "Player");
 	mAvatarSettings.msModel = pCfg->GetString("Player", "AvatarModel", mAvatarSettings.msModel);
+	mAvatarSettings.msModelDir = pCfg->GetString("Player", "AvatarDir", mAvatarSettings.msModelDir);
 	mAvatarSettings.mfYawOffset = cMath::ToRad(pCfg->GetFloat("Player", "AvatarYawOffset", 0));
 	mAvatarSettings.msLanternMesh = pCfg->GetString("Player", "AvatarLanternMesh", "");
 	mAvatarSettings.msLanternBone = pCfg->GetString("Player", "AvatarLanternBone", "");
-	mAvatarSettings.mvLanternOffset = pCfg->GetVector3f("Player", "AvatarLanternOffset", mAvatarSettings.msLanternBone != "" ? cVector3f(0) : cVector3f(0, 1.4f, 0));
+	mAvatarSettings.msLanternOffset = pCfg->GetString("Player", "AvatarLanternOffset", "");
 
 	int lRate = cMath::Max(5, pCfg->GetInt("Network", "StateRate", 20));
 	mfStateSendInterval = 1.0f / (float)lRate;
@@ -1011,6 +1038,14 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 	m_mapClientOwnedBodies.clear();
 	m_mapPropNameHashes.clear();
 	mfPropNameHashTime = -1000.0f;
+
+	//The mod's partner model lives outside the game's folders, so they are left untouched
+	if(mbAvatarDirAdded==false && mAvatarSettings.msModelDir != "")
+	{
+		mbAvatarDirAdded = true;
+		tWString sDir = cString::To16Char(mAvatarSettings.msModelDir);
+		if(cPlatform::FolderExists(sDir)) gpBase->mpEngine->GetResources()->AddResourceDir(sDir, true);
+	}
 	mAvatar.Create(apMap, mAvatarSettings);
 	if(IsConnected()) SendMapInfo();
 }

@@ -173,10 +173,11 @@ class cLuxCoopAvatarSettings
 {
 public:
 	tString msModel;
+	tString msModelDir;			//Folder with the mod's own partner model, searched for files like the game's folders
 	float mfYawOffset;
 	tString msLanternMesh;		//Mesh hung on msLanternBone while the lantern is out, empty for none
 	tString msLanternBone;
-	cVector3f mvLanternOffset;	//Lantern light position relative to the bone, or to the feet without a bone
+	tString msLanternOffset;	//Lantern light position relative to the bone, or to the feet without a bone, "x y z"
 };
 
 /**
@@ -202,6 +203,7 @@ public:
 
 private:
 	void ApplyTransform();
+	void ReadEntitySettings(cXmlElement *apElem, cLuxCoopAvatarSettings &aSettings);
 	void LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimationsElem, const tString& asEntPath);
 	void UpdateAnimation(float afTimeStep, float afSpeed);
 	cAnimationState* GetLocomotionAnim(float afSpeed);
@@ -377,6 +379,7 @@ private:
 	int mlPort;
 	tString msName;
 	cLuxCoopAvatarSettings mAvatarSettings;
+	bool mbAvatarDirAdded;
 	int mlHurtCount;
 	float mfLastHealth;
 	float mfStateSendInterval;
