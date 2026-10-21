@@ -60,6 +60,7 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_Combine,
 	eLuxCoopMsg_GiveItem,
 	eLuxCoopMsg_DropItem,
+	eLuxCoopMsg_Revive,
 };
 
 //----------------------------------------------
@@ -133,7 +134,7 @@ public:
 	void Destroy(cLuxMap *apMap);
 	void OnWorldDestroyed();
 
-	void SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap);
+	void SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned=false);
 	void Update(float afTimeStep);
 
 	bool IsCreated(){ return mpMesh != NULL; }
@@ -153,6 +154,7 @@ private:
 	float mfYaw;
 	float mfTargetYaw;
 	bool mbLanternOn;
+	bool mbDowned;
 	bool mbVisible;
 	bool mbHasState;
 };
@@ -200,6 +202,11 @@ public:
 	void OnLocalCombine(const tString& asItemA, const tString& asItemB);
 	void GiveOrDropItem(cLuxInventory_Item *apItem);
 
+	/////////////////////////
+	// Downed and revive
+	bool TryStartDowned();
+	bool IsDowned(){ return mbDowned; }
+
 	//Story items go to both inventories; consumables stay with whoever picks them up
 	static bool IsSharedItemType(eLuxItemType aType);
 
@@ -236,6 +243,10 @@ private:
 	void HandleCombine(cLuxCoopBuffer &aBuffer);
 	void HandleGiveItem(cLuxCoopBuffer &aBuffer);
 	void HandleDropItem(cLuxCoopBuffer &aBuffer);
+	void HandleRevive(cLuxCoopBuffer &aBuffer);
+
+	void UpdateDowned(float afTimeStep);
+	void EndDowned();
 
 	void ShowMessage(const tWString& asText);
 	tWString GetItemDisplayName(eLuxItemType aType, const tString& asSubType);
@@ -274,6 +285,14 @@ private:
 	float mfTime;
 	bool mbApplyingRemote;
 	int mlDropCount;
+
+	bool mbDowned;
+	bool mbForceDeath;
+	float mfDownedTime;
+	float mfDownedMessageCount;
+	float mfReviveCount;
+	bool mbPartnerDowned;
+	bool mbPartnerDead;
 	bool mbSleepOverridden;
 	bool mbSleepWhenOutOfFocus;
 	tLuxCoopSentBodyMap m_mapSentBodies;

@@ -50,6 +50,12 @@ static const int kCoopChannelNum = 2;
 static const unsigned char kCoopStateFlag_Lantern = 0x01;
 static const unsigned char kCoopStateFlag_Crouch = 0x02;
 static const unsigned char kCoopStateFlag_Dead = 0x04;
+static const unsigned char kCoopStateFlag_Downed = 0x08;
+
+static const float kCoopDownedTime = 60.0f;			//Seconds a downed player waits for help before really dying
+static const float kCoopReviveTime = 3.0f;			//Seconds the partner holds Interact to revive
+static const float kCoopReviveDist = 1.8f;
+static const float kCoopReviveHealth = 30.0f;
 
 static const float kCoopBodySendInterval = 1.0f / 20.0f;
 static const float kCoopBodyResendTime = 2.0f;			//Resend still bodies now and then in case a packet was lost
@@ -143,6 +149,7 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 	mfYaw = 0;
 	mfTargetYaw = 0;
 	mbLanternOn = false;
+	mbDowned = false;
 	mbVisible = false;
 	mbHasState = false;
 }
@@ -209,11 +216,12 @@ void cLuxCoopAvatar::OnWorldDestroyed()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap)
+void cLuxCoopAvatar::SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned)
 {
 	mvTargetPos = avFeetPos;
 	mfTargetYaw = afYaw;
 	mbLanternOn = abLanternOn;
+	mbDowned = abDowned;
 	mbVisible = abInMap;
 
 	//Snap on the first state or after a teleport, otherwise the partner slides across the map
@@ -257,8 +265,10 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 
 void cLuxCoopAvatar::ApplyTransform()
 {
+	//A downed partner lies on the floor
 	cMatrixf mtxTransform = cMath::MatrixRotateY(mfYaw);
-	mtxTransform.SetTranslation(mvPos);
+	if(mbDowned) mtxTransform = cMath::MatrixMul(mtxTransform, cMath::MatrixRotateX(-kPi2f));
+	mtxTransform.SetTranslation(mvPos + (mbDowned ? cVector3f(0, 0.25f, 0) : cVector3f(0)));
 	mpMesh->SetMatrix(mtxTransform);
 
 	mpLight->SetPosition(mvPos + cVector3f(0, 1.4f, 0));
@@ -293,6 +303,14 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mbSleepWhenOutOfFocus = true;
 	mbApplyingRemote = false;
 	mlDropCount = 0;
+
+	mbDowned = false;
+	mbForceDeath = false;
+	mfDownedTime = 0;
+	mfDownedMessageCount = 0;
+	mfReviveCount = 0;
+	mbPartnerDowned = false;
+	mbPartnerDead = false;
 }
 
 //-----------------------------------------------------------------------
@@ -627,6 +645,8 @@ void cLuxCoopNet::Update(float afTimeStep)
 		}
 	}
 
+	if(gpBase->mpMapHandler->MapIsLoaded()) UpdateDowned(afTimeStep);
+
 	mAvatar.Update(afTimeStep);
 
 	enet_host_flush(mpHost);
@@ -824,6 +844,7 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_Combine:		if(mbHandshakeDone) HandleCombine(buffer); break;
 	case eLuxCoopMsg_GiveItem:		if(mbHandshakeDone) HandleGiveItem(buffer); break;
 	case eLuxCoopMsg_DropItem:		if(mbHandshakeDone) HandleDropItem(buffer); break;
+	case eLuxCoopMsg_Revive:		if(mbHandshakeDone) HandleRevive(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -864,8 +885,10 @@ void cLuxCoopNet::HandlePlayerState(cLuxCoopBuffer &aBuffer)
 	if(aBuffer.HasReadError()) return;
 
 	msPartnerMap = sMap;
+	mbPartnerDowned = (lFlags & kCoopStateFlag_Downed)!=0;
+	mbPartnerDead = (lFlags & kCoopStateFlag_Dead)!=0;
 	bool bSameMap = sMap != "" && sMap == GetCurrentMapFile();
-	mAvatar.SetTarget(vFeetPos, fYaw, (lFlags & kCoopStateFlag_Lantern)!=0, bSameMap);
+	mAvatar.SetTarget(vFeetPos, fYaw, (lFlags & kCoopStateFlag_Lantern)!=0, bSameMap, mbPartnerDowned || mbPartnerDead);
 }
 
 //-----------------------------------------------------------------------
@@ -1125,6 +1148,122 @@ void cLuxCoopNet::HandleDropItem(cLuxCoopBuffer &aBuffer)
 
 //-----------------------------------------------------------------------
 
+bool cLuxCoopNet::TryStartDowned()
+{
+	//Real death when alone, when the partner is down too, or when the downed time ran out
+	if(mbForceDeath || mbDowned || IsConnected()==false || mAvatar.IsShown()==false) return false;
+	if(mbPartnerDowned || mbPartnerDead) return false;
+
+	cLuxPlayer *pPlayer = gpBase->mpPlayer;
+	mbDowned = true;
+	mfDownedTime = kCoopDownedTime;
+	mfDownedMessageCount = 0;
+
+	pPlayer->ChangeState(eLuxPlayerState_Normal);
+	pPlayer->GetHelperLantern()->SetActive(false, false, false);
+	pPlayer->SetHeadPosAdd(eLuxHeadPosAdd_Death, cVector3f(0, -1.1f, 0));
+	pPlayer->SetActive(false);
+
+	Log("Coop: player is down\n");
+	SendPlayerState();
+	return true;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::EndDowned()
+{
+	cLuxPlayer *pPlayer = gpBase->mpPlayer;
+	mbDowned = false;
+	pPlayer->SetHeadPosAdd(eLuxHeadPosAdd_Death, cVector3f(0, 0, 0));
+	pPlayer->SetActive(true);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::UpdateDowned(float afTimeStep)
+{
+	cLuxPlayer *pPlayer = gpBase->mpPlayer;
+
+	////////////////////////
+	// Local player is down
+	if(mbDowned)
+	{
+		mfDownedTime -= afTimeStep;
+		if(mfDownedTime <= 0 || IsConnected()==false || mbPartnerDowned || mbPartnerDead)
+		{
+			Log("Coop: nobody came to help, player dies\n");
+			EndDowned();
+			mbForceDeath = true;
+			pPlayer->GetHelperDeath()->Start();
+			mbForceDeath = false;
+			return;
+		}
+
+		mfDownedMessageCount -= afTimeStep;
+		if(mfDownedMessageCount <= 0)
+		{
+			mfDownedMessageCount = 1.0f;
+			ShowMessage(_W("You are down! ") + cString::To16Char(msPartnerName) + _W(" can revive you: ") + cString::ToStringW((int)mfDownedTime) + _W(" s"));
+		}
+		return;
+	}
+
+	////////////////////////
+	// Partner is down: hold Interact next to them
+	if(mbPartnerDowned==false || pPlayer->IsDead() || mAvatar.IsShown()==false)
+	{
+		mfReviveCount = 0;
+		return;
+	}
+
+	float fDist = cMath::Vector3Dist(mAvatar.GetPosition(), pPlayer->GetCharacterBody()->GetFeetPosition());
+	if(fDist > kCoopReviveDist)
+	{
+		mfReviveCount = 0;
+		return;
+	}
+
+	cAction *pInteract = gpBase->mpEngine->GetInput()->GetAction(eLuxAction_Interact);
+	if(pInteract && pInteract->IsTriggerd())
+	{
+		mfReviveCount += afTimeStep;
+		if(mfReviveCount >= kCoopReviveTime)
+		{
+			mfReviveCount = 0;
+			cLuxCoopBuffer buffer;
+			buffer.AddByte(eLuxCoopMsg_Revive);
+			Send(buffer, kCoopChannel_Reliable, true);
+			mbPartnerDowned = false;
+			ShowMessage(_W("You revived ") + cString::To16Char(msPartnerName));
+		}
+		else
+		{
+			ShowMessage(_W("Reviving ") + cString::To16Char(msPartnerName) + _W("... ") + cString::ToStringW((int)(100.0f * mfReviveCount / kCoopReviveTime)) + _W("%"));
+		}
+	}
+	else
+	{
+		mfReviveCount = 0;
+		ShowMessage(cString::To16Char(msPartnerName) + _W(" is down! Hold Interact next to them to revive"));
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleRevive(cLuxCoopBuffer &aBuffer)
+{
+	if(mbDowned==false) return;
+
+	EndDowned();
+	gpBase->mpPlayer->SetHealth(kCoopReviveHealth);
+	Log("Coop: revived by partner\n");
+	ShowMessage(cString::To16Char(msPartnerName) + _W(" revived you"));
+	SendPlayerState();
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxCoopNet::ShowMessage(const tWString& asText)
 {
 	gpBase->mpMessageHandler->SetMessage(asText, 0);
@@ -1190,7 +1329,8 @@ void cLuxCoopNet::SendPlayerState()
 
 	unsigned char lFlags = 0;
 	if(pPlayer->GetHelperLantern()->IsActive()) lFlags |= kCoopStateFlag_Lantern;
-	if(pPlayer->IsDead()) lFlags |= kCoopStateFlag_Dead;
+	if(mbDowned) lFlags |= kCoopStateFlag_Downed;
+	else if(pPlayer->GetHelperDeath()->IsActive()) lFlags |= kCoopStateFlag_Dead;
 	if(pPlayer->GetCurrentMoveState() == eLuxMoveState_Normal)
 	{
 		cLuxMoveState_Normal *pMove = static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData());

@@ -42,6 +42,7 @@
 #include "LuxPlayerState.h"
 #include "LuxLoadScreenHandler.h"
 #include "LuxMainMenu.h"
+#include "LuxCoopNet.h"
 
 
 //-----------------------------------------------------------------------
@@ -1948,6 +1949,9 @@ void cLuxPlayerDeath::Reset()
 void cLuxPlayerDeath::Start()
 {
 	if(mbActive) return;
+
+	//In co-op the player goes down first and can be revived by the partner
+	if(gpBase->mpCoopNet->TryStartDowned()) return;
 
 	mbActive = true;
 
