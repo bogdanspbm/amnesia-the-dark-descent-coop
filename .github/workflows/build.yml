@@ -43,10 +43,17 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev
+          sudo apt-get install -y build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev patchelf
 
+      # dependencies.zip stores the .so/.dylib symlinks as tiny text files "link <target>": turn them back into links
       - name: Unpack engine dependencies
-        run: unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+        run: |
+          unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+          find HPL2/dependencies -type f -size -200c | while read -r f; do
+            c=$(head -c 200 "$f"); case "$c" in "link "*) ln -sf "${c#link }" "$f.tmp" && mv -f "$f.tmp" "$f";; esac
+          done
+          # the find modules look in lib/linux/lib; give them the 64-bit libraries
+          rm -rf HPL2/dependencies/lib/linux/lib && cp -a HPL2/dependencies/lib/linux/lib64 HPL2/dependencies/lib/linux/lib
 
       # The prebuilt static libraries in dependencies.zip are not PIC, so link a classic non-PIE executable
       - name: Configure
@@ -63,12 +70,6 @@ jobs:
           -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -fno-pie"
           -DCMAKE_C_FLAGS="-fno-pie"
 
-      - name: Compiler check
-        if: always()
-        run: |
-          grep -m1 -A3 'CMAKE_SIZEOF_VOID_P' build-linux/CMakeCache.txt || true
-          grep -A40 'Detecting C compiler ABI' build-linux/CMakeFiles/CMakeConfigureLog.yaml | grep -i -E 'error|fail|cannot|undefined' | head -20 || true
-
       - name: Build
         run: cmake --build build-linux --target Amnesia -j"$(nproc)"
 
@@ -77,8 +78,11 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="ci-${GITHUB_SHA::7}"; fi
           d="dist/amnesia-coop-$v-linux-x86_64"
           mkdir -p "$d/_coop/partner"
-          bin=$(find build-linux -name Amnesia.bin.x86_64 -type f | head -1); test -n "$bin"
+          bin=$(find build-linux -maxdepth 2 -name 'Amnesia.bin.x86*' -type f | head -1); test -n "$bin"
           cp "$bin" "$d/Amnesia_coop.bin.x86_64"
+          # CMake takes the 32-bit naming/rpath branch here; the binary is x86_64 and needs the game's lib64/
+          patchelf --set-rpath '$ORIGIN/lib64' "$d/Amnesia_coop.bin.x86_64"
+          file "$d/Amnesia_coop.bin.x86_64"; readelf -d "$d/Amnesia_coop.bin.x86_64" | grep -E 'NEEDED|RUNPATH|RPATH'
           cp coop_data/partner/* "$d/_coop/partner/"
           cp amnesia/src/coop/coop.cfg.example build/package/INSTALL.txt CREDITS.md "$d/"
           cp LICENSE "$d/LICENSE.txt"
@@ -97,8 +101,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # dependencies.zip stores the .so/.dylib symlinks as tiny text files "link <target>": turn them back into links
       - name: Unpack engine dependencies
-        run: unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+        run: |
+          unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+          find HPL2/dependencies -type f -size -200c | while read -r f; do
+            c=$(head -c 200 "$f"); case "$c" in "link "*) ln -sf "${c#link }" "$f.tmp" && mv -f "$f.tmp" "$f";; esac
+          done
 
       - name: Configure
         run: >
