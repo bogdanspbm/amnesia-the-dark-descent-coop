@@ -146,20 +146,53 @@ typedef std::map<unsigned int, tString> tLuxCoopNameHashMap;
 
 //----------------------------------------------
 
+//Partner animations, looked up in the .ent by these names (see gsCoopAvatarAnimNames)
+enum eLuxCoopAvatarAnim
+{
+	eLuxCoopAvatarAnim_Idle,
+	eLuxCoopAvatarAnim_Walk,
+	eLuxCoopAvatarAnim_Run,
+	eLuxCoopAvatarAnim_CrouchIdle,
+	eLuxCoopAvatarAnim_CrouchWalk,
+	eLuxCoopAvatarAnim_IdleLantern,
+	eLuxCoopAvatarAnim_WalkLantern,
+	eLuxCoopAvatarAnim_RunLantern,
+	eLuxCoopAvatarAnim_CrouchIdleLantern,
+	eLuxCoopAvatarAnim_CrouchWalkLantern,
+	eLuxCoopAvatarAnim_Hurt,
+	eLuxCoopAvatarAnim_Downed,
+	eLuxCoopAvatarAnim_Death,
+
+	eLuxCoopAvatarAnim_LastEnum,
+};
+
+/**
+ * What the partner looks like, from coop.cfg.
+ */
+class cLuxCoopAvatarSettings
+{
+public:
+	tString msModel;
+	float mfYawOffset;
+	tString msLanternMesh;		//Mesh hung on msLanternBone while the lantern is out, empty for none
+	tString msLanternBone;
+	cVector3f mvLanternOffset;	//Lantern light position relative to the bone, or to the feet without a bone
+};
+
 /**
  * The partner as seen in the local world: a mesh plus a lantern light,
- * moved towards the latest received state.
+ * animated from the partner's movement, stance, lantern and health.
  */
 class cLuxCoopAvatar
 {
 public:
 	cLuxCoopAvatar();
 
-	void Create(cLuxMap *apMap, const tString& asModelFile, float afYawOffset);
+	void Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSettings);
 	void Destroy(cLuxMap *apMap);
 	void OnWorldDestroyed();
 
-	void SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned=false);
+	void SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned=false, bool abDead=false, bool abCrouching=false, int alHurtCount=-1);
 	void Update(float afTimeStep);
 
 	bool IsCreated(){ return mpMesh != NULL; }
@@ -171,17 +204,22 @@ private:
 	void ApplyTransform();
 	void LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimationsElem, const tString& asEntPath);
 	void UpdateAnimation(float afTimeStep, float afSpeed);
-	void PlayAnimState(cAnimationState *apState);
+	cAnimationState* GetLocomotionAnim(float afSpeed);
+	void PlayAnimState(cAnimationState *apState, float afFadeTime=0.25f);
+	cAnimationState* GetAnim(eLuxCoopAvatarAnim aAnim){ return mvAnims[aAnim]; }
 
 	cMeshEntity *mpMesh;
-	cAnimationState *mpAnimIdle;
-	cAnimationState *mpAnimWalk;
-	cAnimationState *mpAnimRun;
+	cAnimationState* mvAnims[eLuxCoopAvatarAnim_LastEnum];
 	cAnimationState *mpAnimCurrent;
+	bool mbHasLyingAnim;
 	float mfYawOffset;
 	float mfSpeed;
 	float mfBobCount;
+	float mfHurtCount;
 	cLightPoint *mpLight;
+	cMeshEntity *mpLanternMesh;
+	cBoneState *mpLanternBone;
+	cVector3f mvLanternOffset;
 	iCharacterBody *mpBody;
 
 	cVector3f mvPos;
@@ -190,6 +228,9 @@ private:
 	float mfTargetYaw;
 	bool mbLanternOn;
 	bool mbDowned;
+	bool mbDead;
+	bool mbCrouching;
+	int mlHurtCount;
 	bool mbVisible;
 	bool mbHasState;
 };
@@ -335,8 +376,9 @@ private:
 	tString msAddress;
 	int mlPort;
 	tString msName;
-	tString msAvatarModel;
-	float mfAvatarYawOffset;
+	cLuxCoopAvatarSettings mAvatarSettings;
+	int mlHurtCount;
+	float mfLastHealth;
 	float mfStateSendInterval;
 
 	_ENetHost *mpHost;

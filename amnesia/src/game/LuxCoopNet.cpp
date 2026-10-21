@@ -49,7 +49,7 @@
 // CONSTANTS
 //////////////////////////////////////////////////////////////////////////
 
-static const int kCoopProtocolVersion = 4;
+static const int kCoopProtocolVersion = 5;
 static const int kCoopChannel_Reliable = 0;
 static const int kCoopChannel_State = 1;
 static const int kCoopChannelNum = 2;
@@ -162,55 +162,72 @@ tString cLuxCoopBuffer::GetString()
 // AVATAR
 //////////////////////////////////////////////////////////////////////////
 
+//Exact (case insensitive) animation names a partner .ent can provide. Missing ones fall back:
+//lantern variants to the plain ones, crouch to idle/walk, death to downed, and a model
+//without a lying animation is tipped over instead.
+static const char* gsCoopAvatarAnimNames[eLuxCoopAvatarAnim_LastEnum] =
+{
+	"Idle", "Walk", "Run", "CrouchIdle", "CrouchWalk",
+	"IdleLantern", "WalkLantern", "RunLantern", "CrouchIdleLantern", "CrouchWalkLantern",
+	"Hurt", "Downed", "Death",
+};
+
 //-----------------------------------------------------------------------
 
 cLuxCoopAvatar::cLuxCoopAvatar()
 {
 	mpMesh = NULL;
 	mpLight = NULL;
+	mpLanternMesh = NULL;
+	mpLanternBone = NULL;
 	mpBody = NULL;
-	mpAnimIdle = NULL;
-	mpAnimWalk = NULL;
-	mpAnimRun = NULL;
+	for(int i=0; i<eLuxCoopAvatarAnim_LastEnum; ++i) mvAnims[i] = NULL;
 	mpAnimCurrent = NULL;
+	mbHasLyingAnim = false;
 	mfYawOffset = 0;
 	mfSpeed = 0;
 	mfBobCount = 0;
+	mfHurtCount = 0;
+	mvLanternOffset = cVector3f(0, 1.4f, 0);
 	mvPos = 0;
 	mvTargetPos = 0;
 	mfYaw = 0;
 	mfTargetYaw = 0;
 	mbLanternOn = false;
 	mbDowned = false;
+	mbDead = false;
+	mbCrouching = false;
+	mlHurtCount = -1;
 	mbVisible = false;
 	mbHasState = false;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asModelFile, float afYawOffset)
+void cLuxCoopAvatar::Create(cLuxMap *apMap, const cLuxCoopAvatarSettings& aSettings)
 {
 	if(apMap==NULL || mpMesh) return;
 
 	cWorld *pWorld = apMap->GetWorld();
 	cResources *pResources = gpBase->mpEngine->GetResources();
-	mfYawOffset = afYawOffset;
+	mfYawOffset = aSettings.mfYawOffset;
+	const tString& sModelFile = aSettings.msModel;
 
 	////////////////////////
 	// The model is an .ent (mesh plus its animations) or a bare mesh
-	tString sMeshFile = asModelFile;
+	tString sMeshFile = sModelFile;
 	iXmlDocument *pEntDoc = NULL;
 	tString sEntPath;
-	if(cString::ToLowerCase(cString::GetFileExt(asModelFile)) == "ent")
+	if(cString::ToLowerCase(cString::GetFileExt(sModelFile)) == "ent")
 	{
-		sEntPath = cString::To8Char(pResources->GetFileSearcher()->GetFilePath(asModelFile));
+		sEntPath = cString::To8Char(pResources->GetFileSearcher()->GetFilePath(sModelFile));
 		pEntDoc = sEntPath != "" ? pResources->LoadXmlDocument(sEntPath) : NULL;
 		cXmlElement *pModelData = pEntDoc ? pEntDoc->GetFirstElement("ModelData") : NULL;
 		cXmlElement *pMeshElem = pModelData ? pModelData->GetFirstElement("Mesh") : NULL;
 		sMeshFile = pMeshElem ? pMeshElem->GetAttributeString("Filename") : "";
 		if(sMeshFile == "")
 		{
-			Error("Coop: could not read the mesh of partner entity '%s'\n", asModelFile.c_str());
+			Error("Coop: could not read the mesh of partner entity '%s'\n", sModelFile.c_str());
 			if(pEntDoc) pResources->DestroyXmlDocument(pEntDoc);
 			return;
 		}
@@ -226,12 +243,35 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asModelFile, float af
 
 	mpMesh = pWorld->CreateMeshEntity("coop_partner_mesh", pMesh, false);
 
-	mpAnimIdle = mpAnimWalk = mpAnimRun = mpAnimCurrent = NULL;
+	for(int i=0; i<eLuxCoopAvatarAnim_LastEnum; ++i) mvAnims[i] = NULL;
+	mpAnimCurrent = NULL;
 	if(pEntDoc)
 	{
 		cXmlElement *pModelData = pEntDoc->GetFirstElement("ModelData");
 		LoadEntityAnimations(pWorld, pModelData->GetFirstElement("Animations"), sEntPath);
 		pResources->DestroyXmlDocument(pEntDoc);
+	}
+
+	////////////////////////
+	// Lantern: a mesh in the hand plus its light
+	mvLanternOffset = aSettings.mvLanternOffset;
+	mpLanternBone = aSettings.msLanternBone != "" ? mpMesh->GetBoneStateFromName(aSettings.msLanternBone) : NULL;
+	if(aSettings.msLanternBone != "" && mpLanternBone==NULL)
+		Warning("Coop: partner model has no bone '%s' for the lantern\n", aSettings.msLanternBone.c_str());
+
+	mpLanternMesh = NULL;
+	if(aSettings.msLanternMesh != "" && mpLanternBone)
+	{
+		cMesh *pLanternMesh = pResources->GetMeshManager()->CreateMesh(aSettings.msLanternMesh);
+		if(pLanternMesh)
+		{
+			mpLanternMesh = pWorld->CreateMeshEntity("coop_partner_lantern_mesh", pLanternMesh, false);
+			mpLanternBone->AddEntity(mpLanternMesh);
+		}
+		else
+		{
+			Warning("Coop: could not load partner lantern mesh '%s'\n", aSettings.msLanternMesh.c_str());
+		}
 	}
 
 	mpLight = pWorld->CreateLightPoint("coop_partner_lantern", "", false);
@@ -254,6 +294,7 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asModelFile, float af
 	mbHasState = false;
 	mpMesh->SetVisible(false);
 	mpLight->SetVisible(false);
+	if(mpLanternMesh) mpLanternMesh->SetVisible(false);
 }
 
 //-----------------------------------------------------------------------
@@ -262,7 +303,6 @@ void cLuxCoopAvatar::LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimat
 {
 	if(apAnimationsElem==NULL) return;
 
-	//Pick idle, walk and run by name, the way the game's characters name them
 	cXmlNodeListIterator it = apAnimationsElem->GetChildIterator();
 	while(it.HasNext())
 	{
@@ -271,11 +311,17 @@ void cLuxCoopAvatar::LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimat
 		tString sFile = pAnimElem->GetAttributeString("File");
 		tString sLowName = cString::ToLowerCase(sName);
 
-		cAnimationState **ppSlot = NULL;
-		if(mpAnimIdle==NULL && sLowName.find("idle") != tString::npos)			ppSlot = &mpAnimIdle;
-		else if(mpAnimWalk==NULL && sLowName.find("walk") != tString::npos)		ppSlot = &mpAnimWalk;
-		else if(mpAnimRun==NULL && sLowName.find("run") != tString::npos)		ppSlot = &mpAnimRun;
-		if(ppSlot==NULL) continue;
+		//Exact names first (models made for the mod), then idle/walk/run anywhere in the name (the game's characters)
+		int lSlot = -1;
+		for(int i=0; i<eLuxCoopAvatarAnim_LastEnum && lSlot<0; ++i)
+			if(mvAnims[i]==NULL && sLowName == cString::ToLowerCase(gsCoopAvatarAnimNames[i])) lSlot = i;
+		if(lSlot < 0)
+		{
+			if(mvAnims[eLuxCoopAvatarAnim_Idle]==NULL && sLowName.find("idle") != tString::npos)		lSlot = eLuxCoopAvatarAnim_Idle;
+			else if(mvAnims[eLuxCoopAvatarAnim_Walk]==NULL && sLowName.find("walk") != tString::npos)	lSlot = eLuxCoopAvatarAnim_Walk;
+			else if(mvAnims[eLuxCoopAvatarAnim_Run]==NULL && sLowName.find("run") != tString::npos)	lSlot = eLuxCoopAvatarAnim_Run;
+		}
+		if(lSlot < 0) continue;
 
 		//Some of the game's .ent files keep absolute paths from the developers' machines; the files sit next to the .ent
 		bool bAbsolute = sFile.find(':') != tString::npos || (sFile.length() > 0 && sFile[0] == '/');
@@ -291,30 +337,42 @@ void cLuxCoopAvatar::LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimat
 		if(pAnim==NULL) continue;
 
 		cAnimationState *pState = mpMesh->AddAnimation(pAnim, sName, pAnimElem->GetAttributeFloat("Speed", 1.0f));
-		pState->SetLoop(true);
-		*ppSlot = pState;
+		pState->SetLoop(lSlot != eLuxCoopAvatarAnim_Hurt && lSlot != eLuxCoopAvatarAnim_Death);
+		mvAnims[lSlot] = pState;
 	}
 
-	if(mpAnimRun==NULL) mpAnimRun = mpAnimWalk;
-	if(mpAnimWalk==NULL) mpAnimWalk = mpAnimRun;
-	Log("Coop: partner animations idle '%s' walk '%s' run '%s'\n",
-		mpAnimIdle ? mpAnimIdle->GetName().c_str() : "-", mpAnimWalk ? mpAnimWalk->GetName().c_str() : "-", mpAnimRun ? mpAnimRun->GetName().c_str() : "-");
+	////////////////////////
+	// Fill the gaps from what is there
+	cAnimationState **pA = mvAnims;
+	if(pA[eLuxCoopAvatarAnim_Run]==NULL) pA[eLuxCoopAvatarAnim_Run] = pA[eLuxCoopAvatarAnim_Walk];
+	if(pA[eLuxCoopAvatarAnim_Walk]==NULL) pA[eLuxCoopAvatarAnim_Walk] = pA[eLuxCoopAvatarAnim_Run];
+	if(pA[eLuxCoopAvatarAnim_CrouchIdle]==NULL) pA[eLuxCoopAvatarAnim_CrouchIdle] = pA[eLuxCoopAvatarAnim_Idle];
+	if(pA[eLuxCoopAvatarAnim_CrouchWalk]==NULL) pA[eLuxCoopAvatarAnim_CrouchWalk] = pA[eLuxCoopAvatarAnim_Walk];
+	for(int i=0; i<5; ++i)
+		if(pA[eLuxCoopAvatarAnim_IdleLantern + i]==NULL) pA[eLuxCoopAvatarAnim_IdleLantern + i] = pA[eLuxCoopAvatarAnim_Idle + i];
+	mbHasLyingAnim = pA[eLuxCoopAvatarAnim_Downed] != NULL;
+	if(pA[eLuxCoopAvatarAnim_Death]==NULL) pA[eLuxCoopAvatarAnim_Death] = pA[eLuxCoopAvatarAnim_Downed];
 
-	PlayAnimState(mpAnimIdle);
+	tString sFound;
+	for(int i=0; i<eLuxCoopAvatarAnim_LastEnum; ++i)
+		sFound += tString(gsCoopAvatarAnimNames[i]) + "=" + (pA[i] ? pA[i]->GetName() : "-") + " ";
+	Log("Coop: partner animations %s\n", sFound.c_str());
+
+	PlayAnimState(pA[eLuxCoopAvatarAnim_Idle]);
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::PlayAnimState(cAnimationState *apState)
+void cLuxCoopAvatar::PlayAnimState(cAnimationState *apState, float afFadeTime)
 {
 	if(apState==NULL || apState == mpAnimCurrent) return;
 
 	if(mpAnimCurrent)
 	{
-		mpAnimCurrent->FadeOut(0.25f);
+		mpAnimCurrent->FadeOut(afFadeTime);
 		apState->SetActive(true);
 		if(apState->IsFading()==false) apState->SetWeight(0);
-		apState->FadeIn(0.25f);
+		apState->FadeIn(afFadeTime);
 	}
 	else
 	{
@@ -324,21 +382,63 @@ void cLuxCoopAvatar::PlayAnimState(cAnimationState *apState)
 	mpAnimCurrent = apState;
 }
 
+cAnimationState* cLuxCoopAvatar::GetLocomotionAnim(float afSpeed)
+{
+	int lLantern = mbLanternOn ? eLuxCoopAvatarAnim_IdleLantern - eLuxCoopAvatarAnim_Idle : 0;
+
+	if(mbCrouching)
+	{
+		if(afSpeed < 0.2f)	return mvAnims[eLuxCoopAvatarAnim_CrouchIdle + lLantern];
+		return mvAnims[eLuxCoopAvatarAnim_CrouchWalk + lLantern];
+	}
+
+	if(afSpeed < 0.3f)
+	{
+		cAnimationState *pIdle = mvAnims[eLuxCoopAvatarAnim_Idle + lLantern];
+		return pIdle ? pIdle : mvAnims[eLuxCoopAvatarAnim_Walk + lLantern];
+	}
+	if(afSpeed < 3.0f) return mvAnims[eLuxCoopAvatarAnim_Walk + lLantern];
+	return mvAnims[eLuxCoopAvatarAnim_Run + lLantern];
+}
+
 void cLuxCoopAvatar::UpdateAnimation(float afTimeStep, float afSpeed)
 {
-	if(mpAnimCurrent==NULL) return;
-
 	mfSpeed = mfSpeed*0.8f + afSpeed*0.2f;
 	mfBobCount += afTimeStep * cMath::Min(mfSpeed, 4.0f) * 4.0f;
 
-	if(mfSpeed < 0.3f)		PlayAnimState(mpAnimIdle ? mpAnimIdle : mpAnimWalk);
-	else if(mfSpeed < 3.0f)	PlayAnimState(mpAnimWalk);
-	else					PlayAnimState(mpAnimRun);
+	////////////////////////
+	// Lying down: death plays once and holds, downed loops
+	if(mbDowned || mbDead)
+	{
+		cAnimationState *pLying = mvAnims[mbDead ? eLuxCoopAvatarAnim_Death : eLuxCoopAvatarAnim_Downed];
+		if(pLying)
+		{
+			if(pLying != mpAnimCurrent && pLying->IsLooping()==false) pLying->SetTimePosition(0);
+			PlayAnimState(pLying, 0.4f);
+			pLying->SetSpeed(1.0f);
+			return;
+		}
+	}
+
+	////////////////////////
+	// Hurt plays through once, then movement takes over again
+	if(mfHurtCount > 0)
+	{
+		mfHurtCount -= afTimeStep;
+		if(mfHurtCount > 0) return;
+	}
+
+	cAnimationState *pAnim = GetLocomotionAnim(mfSpeed);
+	if(pAnim==NULL) return;
+	PlayAnimState(pAnim);
 
 	//Match the steps to how fast the partner moves
-	if(mpAnimCurrent == mpAnimWalk && mfSpeed >= 0.3f)	mpAnimCurrent->SetSpeed(cMath::Clamp(mfSpeed / 1.6f, 0.5f, 1.8f));
-	else if(mpAnimCurrent == mpAnimRun)					mpAnimCurrent->SetSpeed(cMath::Clamp(mfSpeed / 4.0f, 0.6f, 1.6f));
-	else												mpAnimCurrent->SetSpeed(1.0f);
+	bool bWalk = pAnim == mvAnims[eLuxCoopAvatarAnim_Walk] || pAnim == mvAnims[eLuxCoopAvatarAnim_WalkLantern] ||
+				 pAnim == mvAnims[eLuxCoopAvatarAnim_CrouchWalk] || pAnim == mvAnims[eLuxCoopAvatarAnim_CrouchWalkLantern];
+	bool bRun = pAnim == mvAnims[eLuxCoopAvatarAnim_Run] || pAnim == mvAnims[eLuxCoopAvatarAnim_RunLantern];
+	if(bRun)							pAnim->SetSpeed(cMath::Clamp(mfSpeed / 4.0f, 0.6f, 1.6f));
+	else if(bWalk && mfSpeed >= 0.2f)	pAnim->SetSpeed(cMath::Clamp(mfSpeed / (mbCrouching ? 1.0f : 1.6f), 0.5f, 1.8f));
+	else								pAnim->SetSpeed(1.0f);
 }
 
 //-----------------------------------------------------------------------
@@ -348,6 +448,7 @@ void cLuxCoopAvatar::Destroy(cLuxMap *apMap)
 	if(apMap)
 	{
 		cWorld *pWorld = apMap->GetWorld();
+		if(mpLanternMesh) pWorld->DestroyMeshEntity(mpLanternMesh);
 		if(mpMesh) pWorld->DestroyMeshEntity(mpMesh);
 		if(mpLight) pWorld->DestroyLight(mpLight);
 		if(mpBody) apMap->GetPhysicsWorld()->DestroyCharacterBody(mpBody);
@@ -357,8 +458,11 @@ void cLuxCoopAvatar::Destroy(cLuxMap *apMap)
 
 void cLuxCoopAvatar::OnWorldDestroyed()
 {
-	mpAnimIdle = mpAnimWalk = mpAnimRun = mpAnimCurrent = NULL;
+	for(int i=0; i<eLuxCoopAvatarAnim_LastEnum; ++i) mvAnims[i] = NULL;
+	mpAnimCurrent = NULL;
 	mpMesh = NULL;
+	mpLanternMesh = NULL;
+	mpLanternBone = NULL;
 	mpLight = NULL;
 	mpBody = NULL;
 	mbHasState = false;
@@ -366,13 +470,28 @@ void cLuxCoopAvatar::OnWorldDestroyed()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned)
+void cLuxCoopAvatar::SetTarget(const cVector3f& avFeetPos, float afYaw, bool abLanternOn, bool abInMap, bool abDowned, bool abDead, bool abCrouching, int alHurtCount)
 {
 	mvTargetPos = avFeetPos;
 	mfTargetYaw = afYaw;
 	mbLanternOn = abLanternOn;
 	mbDowned = abDowned;
+	mbDead = abDead;
+	mbCrouching = abCrouching;
 	mbVisible = abInMap;
+
+	//The partner's hurt counter went up since the last state: flinch
+	if(alHurtCount >= 0)
+	{
+		cAnimationState *pHurt = mvAnims[eLuxCoopAvatarAnim_Hurt];
+		if(mlHurtCount >= 0 && alHurtCount != mlHurtCount && pHurt && mbDowned==false && mbDead==false)
+		{
+			pHurt->SetTimePosition(0);
+			PlayAnimState(pHurt, 0.1f);
+			mfHurtCount = pHurt->GetLength() / cMath::Max(pHurt->GetSpeed(), 0.01f) - 0.2f;
+		}
+		mlHurtCount = alHurtCount;
+	}
 
 	//Snap on the first state or after a teleport, otherwise the partner slides across the map
 	if(mbHasState==false || cMath::Vector3DistSqr(mvPos, mvTargetPos) > 4.0f*4.0f)
@@ -393,6 +512,7 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 	bool bShow = mbHasState && mbVisible;
 	mpMesh->SetVisible(bShow);
 	mpLight->SetVisible(bShow && mbLanternOn);
+	if(mpLanternMesh) mpLanternMesh->SetVisible(bShow && mbLanternOn);
 	if(mpBody) mpBody->SetActive(bShow);
 	if(bShow==false) return;
 
@@ -408,7 +528,8 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 	cVector3f vMove = (mvTargetPos - mvPos) * fT;
 	mvPos += vMove;
 	vMove.y = 0;
-	UpdateAnimation(afTimeStep, (afTimeStep > 0 && mbDowned==false) ? vMove.Length() / afTimeStep : 0);
+	bool bLying = mbDowned || mbDead;
+	UpdateAnimation(afTimeStep, (afTimeStep > 0 && bLying==false) ? vMove.Length() / afTimeStep : 0);
 	mfYaw = cMath::TurnAngleRad(mfYaw, mfTargetYaw, k2Pif * afTimeStep);
 
 	ApplyTransform();
@@ -418,18 +539,23 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 
 void cLuxCoopAvatar::ApplyTransform()
 {
-	//A downed partner lies on the floor
+	//A downed partner lies on the floor; models without a lying animation are tipped over
+	bool bTipOver = (mbDowned || mbDead) && mbHasLyingAnim==false;
 	cMatrixf mtxTransform = cMath::MatrixRotateY(mfYaw + mfYawOffset);
-	if(mbDowned) mtxTransform = cMath::MatrixMul(mtxTransform, cMath::MatrixRotateX(-kPi2f));
+	if(bTipOver) mtxTransform = cMath::MatrixMul(mtxTransform, cMath::MatrixRotateX(-kPi2f));
 	//Models without a walk animation bob a little while moving, so they don't just glide
-	float fBob = (mpAnimWalk==NULL && mbDowned==false && mfSpeed > 0.3f) ? std::fabs(sin(mfBobCount)) * 0.05f : 0;
-	mtxTransform.SetTranslation(mvPos + (mbDowned ? cVector3f(0, 0.25f, 0) : cVector3f(0, fBob, 0)));
+	bool bBob = mvAnims[eLuxCoopAvatarAnim_Walk]==NULL && bTipOver==false && mfSpeed > 0.3f;
+	float fBob = bBob ? std::fabs(sin(mfBobCount)) * 0.05f : 0;
+	mtxTransform.SetTranslation(mvPos + (bTipOver ? cVector3f(0, 0.25f, 0) : cVector3f(0, fBob, 0)));
 	mpMesh->SetMatrix(mtxTransform);
 
-	mpLight->SetPosition(mvPos + cVector3f(0, 1.4f, 0));
+	//The light hangs from the hand when there is a bone for it, otherwise at chest height
+	if(mpLanternBone)	mpLight->SetPosition(cMath::MatrixMul(mpLanternBone->GetWorldMatrix(), mvLanternOffset));
+	else				mpLight->SetPosition(mvPos + mvLanternOffset);
 }
 
 //-----------------------------------------------------------------------
+
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -443,8 +569,11 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	msAddress = "127.0.0.1";
 	mlPort = 27960;
 	msName = "Player";
-	msAvatarModel = "alexander.ent";
-	mfAvatarYawOffset = 0;
+	mAvatarSettings.msModel = "alexander.ent";
+	mAvatarSettings.mfYawOffset = 0;
+	mAvatarSettings.mvLanternOffset = cVector3f(0, 1.4f, 0);
+	mlHurtCount = 0;
+	mfLastHealth = -1;
 	mfStateSendInterval = 1.0f / 20.0f;
 
 	mpHost = NULL;
@@ -510,8 +639,11 @@ void cLuxCoopNet::LoadMainConfig()
 	msAddress = pCfg->GetString("Network", "Address", "127.0.0.1");
 	mlPort = pCfg->GetInt("Network", "Port", 27960);
 	msName = pCfg->GetString("Player", "Name", "Player");
-	msAvatarModel = pCfg->GetString("Player", "AvatarModel", msAvatarModel);
-	mfAvatarYawOffset = cMath::ToRad(pCfg->GetFloat("Player", "AvatarYawOffset", 0));
+	mAvatarSettings.msModel = pCfg->GetString("Player", "AvatarModel", mAvatarSettings.msModel);
+	mAvatarSettings.mfYawOffset = cMath::ToRad(pCfg->GetFloat("Player", "AvatarYawOffset", 0));
+	mAvatarSettings.msLanternMesh = pCfg->GetString("Player", "AvatarLanternMesh", "");
+	mAvatarSettings.msLanternBone = pCfg->GetString("Player", "AvatarLanternBone", "");
+	mAvatarSettings.mvLanternOffset = pCfg->GetVector3f("Player", "AvatarLanternOffset", mAvatarSettings.msLanternBone != "" ? cVector3f(0) : cVector3f(0, 1.4f, 0));
 
 	int lRate = cMath::Max(5, pCfg->GetInt("Network", "StateRate", 20));
 	mfStateSendInterval = 1.0f / (float)lRate;
@@ -847,7 +979,15 @@ void cLuxCoopNet::Update(float afTimeStep)
 		}
 	}
 
-	if(gpBase->mpMapHandler->MapIsLoaded()) UpdateDowned(afTimeStep);
+	if(gpBase->mpMapHandler->MapIsLoaded())
+	{
+		UpdateDowned(afTimeStep);
+
+		//Count hits so the partner's copy of us can flinch; a counter survives a lost state packet
+		float fHealth = gpBase->mpPlayer->GetHealth();
+		if(mfLastHealth >= 0 && fHealth < mfLastHealth - 0.5f) ++mlHurtCount;
+		mfLastHealth = fHealth;
+	}
 
 	mAvatar.Update(afTimeStep);
 
@@ -871,7 +1011,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 	m_mapClientOwnedBodies.clear();
 	m_mapPropNameHashes.clear();
 	mfPropNameHashTime = -1000.0f;
-	mAvatar.Create(apMap, msAvatarModel, mfAvatarYawOffset);
+	mAvatar.Create(apMap, mAvatarSettings);
 	if(IsConnected()) SendMapInfo();
 }
 
@@ -894,7 +1034,7 @@ void cLuxCoopNet::CreateWorldEntities(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
-	mAvatar.Create(apMap, msAvatarModel, mfAvatarYawOffset);
+	mAvatar.Create(apMap, mAvatarSettings);
 }
 
 //-----------------------------------------------------------------------
@@ -1091,6 +1231,7 @@ void cLuxCoopNet::HandlePlayerState(cLuxCoopBuffer &aBuffer)
 	float fPitch = aBuffer.GetFloat();
 	unsigned char lFlags = aBuffer.GetByte();
 	float fLightLevel = aBuffer.GetFloat();
+	int lHurtCount = aBuffer.GetByte();
 	if(aBuffer.HasReadError()) return;
 
 	float fDeltaTime = mfTime - mfPartnerLastStateTime;
@@ -1109,7 +1250,7 @@ void cLuxCoopNet::HandlePlayerState(cLuxCoopBuffer &aBuffer)
 	mbPartnerDowned = (lFlags & kCoopStateFlag_Downed)!=0;
 	mbPartnerDead = (lFlags & kCoopStateFlag_Dead)!=0;
 	bool bSameMap = sMap != "" && sMap == GetCurrentMapFile();
-	mAvatar.SetTarget(vFeetPos, fYaw, (lFlags & kCoopStateFlag_Lantern)!=0, bSameMap, mbPartnerDowned || mbPartnerDead);
+	mAvatar.SetTarget(vFeetPos, fYaw, mbPartnerLanternOn, bSameMap, mbPartnerDowned, mbPartnerDead, mbPartnerCrouching, lHurtCount);
 }
 
 //-----------------------------------------------------------------------
@@ -1769,6 +1910,7 @@ void cLuxCoopNet::SendPlayerState()
 	buffer.AddFloat(pPlayer->GetCamera()->GetPitch());
 	buffer.AddByte(lFlags);
 	buffer.AddFloat(pPlayer->GetHelperLightLevel()->GetNormalLightLevel());
+	buffer.AddByte((unsigned char)(mlHurtCount & 0xff));
 	Send(buffer, kCoopChannel_State, false);
 }
 
