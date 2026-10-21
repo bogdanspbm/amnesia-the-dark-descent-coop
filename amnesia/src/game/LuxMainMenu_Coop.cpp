@@ -219,7 +219,8 @@ void cLuxMainMenu_Coop::UpdateStatus()
 		if(sStatus == "") sStatus = pNet->IsHost() ? "Waiting for a partner..." : "Connecting...";
 	}
 
-	mpLStatus->SetText(cString::To16Char(sStatus));
+	//Statuses carry Steam names, which are UTF-8
+	mpLStatus->SetText(cString::UTF8ToWChar(sStatus));
 
 	bool bActive = pNet->IsActive();
 	mpHostButton->SetEnabled(bActive==false);
@@ -253,7 +254,7 @@ void cLuxMainMenu_Coop::UpdateLobbyList()
 		{
 			const cLuxCoopLobbyInfo &lobby = (*pLobbies)[i];
 			msLobbyIds[i] = lobby.msId;
-			mpLobbyButtons[i]->SetText(cString::To16Char(lobby.msName + "  (" + cString::ToString(lobby.mlMembers) + "/" + cString::ToString(lobby.mlMaxMembers) + ")"));
+			mpLobbyButtons[i]->SetText(cString::UTF8ToWChar(lobby.msName + "  (" + cString::ToString(lobby.mlMembers) + "/" + cString::ToString(lobby.mlMaxMembers) + ")"));
 			mpLobbyButtons[i]->SetVisible(true);
 		}
 		else if(i==0 && bShow)
