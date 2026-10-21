@@ -531,6 +531,9 @@ void cLuxMapHandler::SetSavedMapCollection(cLuxSavedGameMapCollection *apMaps)
 
 void cLuxMapHandler::AppLostInputFocus()
 {
+	//In co-op the game goes on in the background for the partner, and so does its sound (a recording needs it too)
+	if(gpBase->mpCoopNet && gpBase->mpCoopNet->IsActive()) return;
+
 	PauseSoundsAndMusic();
 }
 
