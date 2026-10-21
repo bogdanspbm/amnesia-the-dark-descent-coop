@@ -403,6 +403,8 @@ private:
 	tString msName;
 	cLuxCoopAvatarSettings mAvatarSettings;
 	bool mbAvatarDirAdded;
+	bool mbDevAutoStart;
+	float mfDevAutoStartCount;
 	int mlHurtCount;
 	float mfLastHealth;
 	float mfStateSendInterval;

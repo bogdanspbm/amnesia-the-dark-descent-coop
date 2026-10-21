@@ -610,6 +610,8 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mpSteam = NULL;
 	mlSteamAppId = 480;
 	msSteamDir = "_coop/steam";
+	mbDevAutoStart = false;
+	mfDevAutoStartCount = 0;
 	mbHandshakeDone = false;
 	mfStateSendCount = 0;
 	mfBodySendCount = 0;
@@ -673,6 +675,8 @@ void cLuxCoopNet::LoadMainConfig()
 	mNetType = cString::ToLowerCase(pCfg->GetString("Network", "Transport", "direct")) == "steam" ? eLuxCoopNetType_Steam : eLuxCoopNetType_Direct;
 	mlSteamAppId = pCfg->GetInt("Network", "SteamAppId", mlSteamAppId);
 	msSteamDir = pCfg->GetString("Network", "SteamDir", msSteamDir);
+	//For development: with Mode="host" the game starts by itself as soon as the partner has joined
+	mbDevAutoStart = pCfg->GetBool("Dev", "AutoStart", false);
 	msSteamLobby = pCfg->GetString("Network", "SteamLobby", "");
 	msName = pCfg->GetString("Player", "Name", "Player");
 	mAvatarSettings.msModel = pCfg->GetString("Player", "AvatarModel", mAvatarSettings.msModel);
@@ -1014,6 +1018,16 @@ void cLuxCoopNet::OnStart()
 
 void cLuxCoopNet::Update(float afTimeStep)
 {
+	if(mfDevAutoStartCount > 0)
+	{
+		mfDevAutoStartCount -= afTimeStep;
+		if(mfDevAutoStartCount <= 0 && IsConnected() && gpBase->mpMapHandler->MapIsLoaded()==false)
+		{
+			Log("Coop: Dev AutoStart, starting the game\n");
+			StartCoopGame();
+		}
+	}
+
 	//Steam runs even while not connected, for lobby lists and invites from the overlay
 	if(mpSteam)
 	{
@@ -1273,6 +1287,10 @@ void cLuxCoopNet::HandleHello(cLuxCoopBuffer &aBuffer)
 	Log("Coop: partner '%s' joined\n", msPartnerName.c_str());
 
 	SendMapInfo();
+
+	//Started a moment later from Update, so the main menu has surely finished loading
+	if(mbDevAutoStart && IsHost() && gpBase->mpMapHandler->MapIsLoaded()==false)
+		mfDevAutoStartCount = 2.0f;
 }
 
 //-----------------------------------------------------------------------
