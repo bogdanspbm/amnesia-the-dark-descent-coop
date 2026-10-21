@@ -58,6 +58,10 @@ static const unsigned char kCoopStateFlag_Lantern = 0x01;
 static const unsigned char kCoopStateFlag_Crouch = 0x02;
 static const unsigned char kCoopStateFlag_Dead = 0x04;
 static const unsigned char kCoopStateFlag_Downed = 0x08;
+static const unsigned char kCoopStateFlag_Lying = 0x10;		//A cutscene has the player on the floor (head lowered or camera rolled)
+
+static const float kCoopLyingHeadDrop = 0.6f;			//Script head offset below this counts as lying
+static const float kCoopLyingRoll = 0.5f;				//So does a camera roll past ~30 degrees
 
 static const float kCoopDownedTime = 60.0f;			//Seconds a downed player waits for help before really dying
 static const float kCoopReviveTime = 3.0f;			//Seconds the partner holds Interact to revive
@@ -1290,7 +1294,9 @@ void cLuxCoopNet::HandlePlayerState(cLuxCoopBuffer &aBuffer)
 	mbPartnerDowned = (lFlags & kCoopStateFlag_Downed)!=0;
 	mbPartnerDead = (lFlags & kCoopStateFlag_Dead)!=0;
 	bool bSameMap = sMap != "" && sMap == GetCurrentMapFile();
-	mAvatar.SetTarget(vFeetPos, fYaw, mbPartnerLanternOn, bSameMap, mbPartnerDowned, mbPartnerDead, mbPartnerCrouching, lHurtCount);
+	//Lying in a cutscene looks the same as being downed
+	bool bLying = mbPartnerDowned || (lFlags & kCoopStateFlag_Lying)!=0;
+	mAvatar.SetTarget(vFeetPos, fYaw, mbPartnerLanternOn, bSameMap, bLying, mbPartnerDead, mbPartnerCrouching, lHurtCount);
 }
 
 //-----------------------------------------------------------------------
@@ -1936,6 +1942,8 @@ void cLuxCoopNet::SendPlayerState()
 	if(pPlayer->GetHelperLantern()->IsActive()) lFlags |= kCoopStateFlag_Lantern;
 	if(mbDowned) lFlags |= kCoopStateFlag_Downed;
 	else if(pPlayer->GetHelperDeath()->IsActive()) lFlags |= kCoopStateFlag_Dead;
+	if(mbDowned==false && (pPlayer->GetHeadPosAddSum().y < -kCoopLyingHeadDrop || cMath::Abs(pPlayer->GetRoll()) > kCoopLyingRoll))
+		lFlags |= kCoopStateFlag_Lying;
 	if(pPlayer->GetCurrentMoveState() == eLuxMoveState_Normal)
 	{
 		cLuxMoveState_Normal *pMove = static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData());

@@ -254,6 +254,7 @@ public:
 	void FadeRollTo(float afX, float afSpeedMul, float afMaxSpeed);
 	void FadeLeanRollTo(float afX, float afSpeedMul, float afMaxSpeed);
 	void SetRoll(float afX);
+	float GetRoll(){ return mfRoll; }
 
 	bool GetNoFallDamage(){ return mbNoFallDamage;}
 	void SetNoFallDamage(bool abX){ mbNoFallDamage = abX;}
