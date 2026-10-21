@@ -24,6 +24,7 @@
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxMoveState_Normal.h"
+#include "LuxProp.h"
 
 #include <enet/enet.h>
 #include <string.h>
@@ -40,6 +41,11 @@ static const int kCoopChannelNum = 2;
 static const unsigned char kCoopStateFlag_Lantern = 0x01;
 static const unsigned char kCoopStateFlag_Crouch = 0x02;
 static const unsigned char kCoopStateFlag_Dead = 0x04;
+
+static const float kCoopBodySendInterval = 1.0f / 20.0f;
+static const float kCoopBodyResendTime = 2.0f;			//Resend still bodies now and then in case a packet was lost
+static const int kCoopMaxBodiesPerPacket = 20;			//57 bytes each, keeps packets under the usual MTU
+static const int kCoopMaxBodiesPerEntity = 32;
 
 //////////////////////////////////////////////////////////////////////////
 // BUFFER
@@ -244,6 +250,8 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mbHandshakeDone = false;
 	mfStateSendCount = 0;
 	mfReconnectCount = 0;
+	mfBodySendCount = 0;
+	mfTime = 0;
 }
 
 //-----------------------------------------------------------------------
@@ -303,6 +311,7 @@ void cLuxCoopNet::Update(float afTimeStep)
 {
 	if(mpHost==NULL) return;
 
+	mfTime += afTimeStep;
 	PollEvents();
 
 	//Client keeps trying to reach the host until it answers
@@ -328,6 +337,16 @@ void cLuxCoopNet::Update(float afTimeStep)
 			mfStateSendCount = mfStateSendInterval;
 			SendPlayerState();
 		}
+
+		if(IsHost())
+		{
+			mfBodySendCount -= afTimeStep;
+			if(mfBodySendCount <= 0)
+			{
+				mfBodySendCount = kCoopBodySendInterval;
+				SendBodyStates();
+			}
+		}
 	}
 
 	mAvatar.Update(afTimeStep);
@@ -348,6 +367,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
+	m_mapSentBodies.clear();
 	mAvatar.Create(apMap, msAvatarMesh);
 	if(IsConnected()) SendMapInfo();
 }
@@ -502,6 +522,7 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_Hello:			HandleHello(buffer); break;
 	case eLuxCoopMsg_PlayerState:	if(mbHandshakeDone) HandlePlayerState(buffer); break;
 	case eLuxCoopMsg_MapInfo:		if(mbHandshakeDone) HandleMapInfo(buffer); break;
+	case eLuxCoopMsg_BodyStates:	if(mbHandshakeDone && IsHost()==false) HandleBodyStates(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -524,6 +545,7 @@ void cLuxCoopNet::HandleHello(cLuxCoopBuffer &aBuffer)
 
 	msPartnerName = sName;
 	mbHandshakeDone = true;
+	m_mapSentBodies.clear();
 	Log("Coop: partner '%s' joined\n", msPartnerName.c_str());
 
 	SendMapInfo();
@@ -555,6 +577,41 @@ void cLuxCoopNet::HandleMapInfo(cLuxCoopBuffer &aBuffer)
 	msPartnerMap = sMap;
 	if(sMap != GetCurrentMapFile())
 		Log("Coop: partner is on map '%s', we are on '%s'\n", sMap.c_str(), GetCurrentMapFile().c_str());
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleBodyStates(cLuxCoopBuffer &aBuffer)
+{
+	tString sMap = aBuffer.GetString();
+	int lCount = aBuffer.GetInt();
+	if(aBuffer.HasReadError()) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL || sMap != GetCurrentMapFile()) return;
+
+	for(int i=0; i<lCount; ++i)
+	{
+		int lEntityID = aBuffer.GetInt();
+		int lBodyIdx = aBuffer.GetByte();
+		cVector3f vPos = aBuffer.GetVector3f();
+		cQuaternion qRot = aBuffer.GetQuaternion();
+		cVector3f vLinVel = aBuffer.GetVector3f();
+		cVector3f vAngVel = aBuffer.GetVector3f();
+		if(aBuffer.HasReadError()) return;
+
+		iLuxProp *pProp = static_cast<iLuxProp*>(pMap->GetEntityByID(lEntityID, eLuxEntityType_Prop));
+		if(pProp==NULL || lBodyIdx >= pProp->GetBodyNum()) continue;
+
+		//Velocities let the local simulation carry the body forward until the next state arrives
+		iPhysicsBody *pBody = pProp->GetBody(lBodyIdx);
+		cMatrixf mtxTransform = cMath::MatrixQuaternion(qRot);
+		mtxTransform.SetTranslation(vPos);
+		pBody->Enable();
+		pBody->SetMatrix(mtxTransform);
+		pBody->SetLinearVelocity(vLinVel);
+		pBody->SetAngularVelocity(vAngVel);
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -604,6 +661,80 @@ void cLuxCoopNet::SendMapInfo()
 	buffer.AddByte(eLuxCoopMsg_MapInfo);
 	buffer.AddString(GetCurrentMapFile());
 	Send(buffer, kCoopChannel_Reliable, true);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::SendBodyStates()
+{
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap==NULL) return;
+	tString sMap = GetCurrentMapFile();
+
+	cLuxCoopBuffer entries;
+	int lCount = 0;
+
+	cLuxEntityIterator entityIt = pMap->GetEntityIterator();
+	while(entityIt.HasNext())
+	{
+		iLuxEntity *pEntity = entityIt.Next();
+		if(pEntity->GetEntityType() != eLuxEntityType_Prop) continue;
+
+		iLuxProp *pProp = static_cast<iLuxProp*>(pEntity);
+		int lBodyNum = cMath::Min(pProp->GetBodyNum(), kCoopMaxBodiesPerEntity);
+		for(int i=0; i<lBodyNum; ++i)
+		{
+			iPhysicsBody *pBody = pProp->GetBody(i);
+			if(pBody->GetMass() <= 0) continue;
+
+			cMatrixf &mtxBody = pBody->GetLocalMatrix();
+			cVector3f vPos = mtxBody.GetTranslation();
+			cQuaternion qRot;
+			qRot.FromRotationMatrix(mtxBody.GetRotation());
+
+			int lKey = pProp->GetID() * kCoopMaxBodiesPerEntity + i;
+			tLuxCoopSentBodyMap::iterator it = m_mapSentBodies.find(lKey);
+			if(it != m_mapSentBodies.end())
+			{
+				cLuxCoopSentBody &sent = it->second;
+				bool bMoved =	cMath::Vector3DistSqr(sent.mvPos, vPos) > 0.001f*0.001f ||
+								cMath::Abs(cMath::QuaternionDot(sent.mqRot, qRot)) < 0.99999f;
+				if(bMoved==false && mfTime - sent.mfTime < kCoopBodyResendTime) continue;
+			}
+
+			cLuxCoopSentBody &sent = m_mapSentBodies[lKey];
+			sent.mvPos = vPos;
+			sent.mqRot = qRot;
+			sent.mfTime = mfTime;
+
+			entries.AddInt(pProp->GetID());
+			entries.AddByte((unsigned char)i);
+			entries.AddVector3f(vPos);
+			entries.AddQuaternion(qRot);
+			entries.AddVector3f(pBody->GetLinearVelocity());
+			entries.AddVector3f(pBody->GetAngularVelocity());
+			++lCount;
+
+			if(lCount == kCoopMaxBodiesPerPacket)
+			{
+				SendBodyPacket(sMap, entries, lCount);
+				entries = cLuxCoopBuffer();
+				lCount = 0;
+			}
+		}
+	}
+
+	if(lCount > 0) SendBodyPacket(sMap, entries, lCount);
+}
+
+void cLuxCoopNet::SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEntries, int alCount)
+{
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_BodyStates);
+	buffer.AddString(asMap);
+	buffer.AddInt(alCount);
+	buffer.AddBuffer(aEntries);
+	Send(buffer, kCoopChannel_State, false);
 }
 
 //-----------------------------------------------------------------------

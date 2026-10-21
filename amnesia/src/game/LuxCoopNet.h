@@ -44,6 +44,7 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_Hello = 1,
 	eLuxCoopMsg_PlayerState,
 	eLuxCoopMsg_MapInfo,
+	eLuxCoopMsg_BodyStates,
 };
 
 //----------------------------------------------
@@ -61,13 +62,16 @@ public:
 	void AddInt(int alX);
 	void AddFloat(float afX);
 	void AddVector3f(const cVector3f& avX){ AddFloat(avX.x); AddFloat(avX.y); AddFloat(avX.z); }
+	void AddQuaternion(const cQuaternion& aqX){ AddFloat(aqX.w); AddFloat(aqX.v.x); AddFloat(aqX.v.y); AddFloat(aqX.v.z); }
 	void AddString(const tString& asX);
+	void AddBuffer(const cLuxCoopBuffer& aX){ mvData.insert(mvData.end(), aX.mvData.begin(), aX.mvData.end()); }
 
 	unsigned char GetByte();
 	int GetInt();
 	float GetFloat();
 	cVector3f GetVector3f(){ float x = GetFloat(); float y = GetFloat(); float z = GetFloat(); return cVector3f(x,y,z); }
 	tString GetString();
+	cQuaternion GetQuaternion(){ float w = GetFloat(); cVector3f v = GetVector3f(); return cQuaternion(w, v.x, v.y, v.z); }
 
 	bool HasReadError(){ return mbReadError; }
 	const unsigned char* GetData() const { return mvData.empty() ? NULL : &mvData[0]; }
@@ -80,6 +84,21 @@ private:
 	size_t mlReadPos;
 	bool mbReadError;
 };
+
+//----------------------------------------------
+
+/**
+ * Last body transform the host sent, so only bodies that moved are sent again.
+ */
+class cLuxCoopSentBody
+{
+public:
+	cVector3f mvPos;
+	cQuaternion mqRot;
+	float mfTime;
+};
+
+typedef std::map<int, cLuxCoopSentBody> tLuxCoopSentBodyMap;
 
 //----------------------------------------------
 
@@ -152,10 +171,13 @@ private:
 	void HandleHello(cLuxCoopBuffer &aBuffer);
 	void HandlePlayerState(cLuxCoopBuffer &aBuffer);
 	void HandleMapInfo(cLuxCoopBuffer &aBuffer);
+	void HandleBodyStates(cLuxCoopBuffer &aBuffer);
 
 	void SendHello();
 	void SendPlayerState();
 	void SendMapInfo();
+	void SendBodyStates();
+	void SendBodyPacket(const tString& asMap, const cLuxCoopBuffer &aEntries, int alCount);
 	void Send(const cLuxCoopBuffer &aBuffer, int alChannel, bool abReliable);
 
 	tString GetCurrentMapFile();
@@ -173,6 +195,9 @@ private:
 	bool mbHandshakeDone;
 	float mfStateSendCount;
 	float mfReconnectCount;
+	float mfBodySendCount;
+	float mfTime;
+	tLuxCoopSentBodyMap m_mapSentBodies;
 
 	tString msPartnerName;
 	tString msPartnerMap;
