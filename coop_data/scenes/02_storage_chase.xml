@@ -1,0 +1,50 @@
+﻿<!-- Scene 2: sneaking through the storage, a grunt wakes up, both run for the cellar door.
+     Map 12_storage has 230 path nodes (servant_grunt.nodes), so GoTo and Flee use A*.
+     grunt_normal_2 stands inactive at -18.2 0 0.27, a few metres from PlayerStartArea_5; the scripted ones of the
+     map are left alone. The flight ends at level_celler_1 (13.84 4.03 7.22) without using it.
+     Script lines run in both games (the client needs the enemy active to mirror it). -->
+<Scene Name="StorageChase" Map="12_storage" StartPos="PlayerStartArea_5" Invulnerable="true" KeepSanity="true" StartDelay="3" Length="60">
+	<Host>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Wait Time="1" />
+		<Lantern On="true" />
+		<Crouch On="true" />
+		<Look Target="-24 0 6" Time="2" />
+		<GoTo Target="-21 0 9" Dist="0.8" />
+		<Look Target="partner" Time="0.8" />
+		<Wait Time="1.5" />
+		<!-- Something is moving -->
+		<Script Code="PlaySoundAtEntity(&quot;coop_growl&quot;, &quot;amb_alert.snt&quot;, &quot;grunt_normal_2&quot;, 0, false);" />
+		<Look Target="grunt_normal_2" Time="0.5" />
+		<Wait Time="1" />
+		<Script Code="SetEntityActive(&quot;grunt_normal_2&quot;, true); ShowEnemyPlayerPosition(&quot;grunt_normal_2&quot;);" />
+		<Wait Time="1.2" />
+		<Crouch On="false" />
+		<Run On="true" />
+		<Flee From="grunt_normal_2" To="level_celler_1" LookBack="true" />
+		<Run On="false" />
+		<Look Target="grunt_normal_2" Time="0.8" />
+		<Wait Time="2" />
+		<Look Target="partner" Time="1" />
+		<WaitUntil PartnerWithin="3" Time="15" />
+		<Wait Time="2" />
+		<End />
+	</Host>
+	<Client>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Wait Time="2" />
+		<Lantern On="true" />
+		<Crouch On="true" />
+		<Follow Target="partner" Dist="1.8" Time="6" />
+		<Look Target="grunt_normal_2" Time="0.6" />
+		<Wait Time="5.5" />
+		<Script Code="SetEntityActive(&quot;grunt_normal_2&quot;, true); ShowEnemyPlayerPosition(&quot;grunt_normal_2&quot;);" />
+		<Wait Time="0.6" />
+		<Crouch On="false" />
+		<Run On="true" />
+		<Flee From="grunt_normal_2" To="level_celler_1" LookBack="true" />
+		<Run On="false" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="5" />
+	</Client>
+</Scene>

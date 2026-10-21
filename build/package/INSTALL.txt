@@ -1,0 +1,30 @@
+Amnesia: The Dark Descent - Co-op
+=================================
+
+RU
+--
+1. Нужна своя копия Amnesia: The Dark Descent (Steam/GOG). Файлы игры в архив не входят.
+2. Распакуйте архив в папку игры (рядом с Amnesia.exe). Оригинальные файлы не перезаписываются.
+3. Если Windows ругается на MSVCP140.dll / VCRUNTIME140.dll - установите
+   Visual C++ 2015-2022 Redistributable x86: https://aka.ms/vs/17/release/vc_redist.x86.exe
+4. Запускайте Amnesia_coop.exe -> главное меню -> Co-op.
+   Прямое подключение: хост жмёт "Host by IP", напарник вводит IP хоста и жмёт "Join by IP".
+   Хосту нужно открыть UDP 27960 (брандмауэр/роутер) или использовать Radmin VPN / ZeroTier / Tailscale.
+5. Steam-лобби (необязательно): положите steam_api.dll из Steamworks SDK в _coop\steam\ (см. README.txt там).
+
+Полная инструкция: https://github.com/bogdanspbm/amnesia-the-dark-descent-coop/blob/main/docs/NETWORK_PLAY.md
+
+EN
+--
+1. You need your own copy of Amnesia: The Dark Descent (Steam/GOG). No game files are included.
+2. Extract this archive into the game folder (next to Amnesia.exe). Nothing of the game is overwritten.
+3. If MSVCP140.dll / VCRUNTIME140.dll is missing, install the Visual C++ 2015-2022 Redistributable (x86):
+   https://aka.ms/vs/17/release/vc_redist.x86.exe
+4. Run Amnesia_coop.exe -> main menu -> Co-op.
+   Direct IP: the host presses "Host by IP", the partner types the host's IP and presses "Join by IP".
+   The host must allow UDP 27960 (firewall/router) or use Radmin VPN / ZeroTier / Tailscale.
+5. Steam lobbies (optional): put steam_api.dll from the Steamworks SDK into _coop\steam\ (see the README.txt there).
+
+Full guide: https://github.com/bogdanspbm/amnesia-the-dark-descent-coop/blob/main/docs/NETWORK_PLAY.md
+
+License: GPL v3 (code), CC0 (partner model). Source: https://github.com/bogdanspbm/amnesia-the-dark-descent-coop

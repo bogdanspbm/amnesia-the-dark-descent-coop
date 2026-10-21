@@ -350,3 +350,27 @@ MigrationBackup/
 .ionide/
 HPL2/core/sources/BuildID_HPL2_0_*.cpp
 HPL2/dependencies/
+
+# Co-op mod: build outputs and local files
+amnesia/redist/
+amnesia/_temp/
+HPL2/lib/
+HPL2/_temp/
+build-*/
+dist/
+*.coopsav
+captures/
+coop.cfg
+# Steamworks SDK and its redistributables are never committed (see docs/NETWORK_PLAY.md)
+steam/
+SteamworksSDK/
+steam_api*.dll
+steam_api*.lib
+libsteam_api.*
+steam_appid.txt
+# Game assets from an Amnesia install are never committed
+*.dds
+*.ogg
+*.snt
+*.map
+*.map_cache

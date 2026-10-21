@@ -1,0 +1,42 @@
+﻿<!-- Scene 4: another part of the storage, filmed from the client (record with -RecordSide client).
+     The two come into the room where grunt_in_room (-46.25 -2 -32.25) waits inactive; it wakes, they run back north
+     past the candles to PlayerStartArea_6 (-51.75 -2 -1.25). Start PlayerStartArea_7 (-56.29 -1.95 -31.16).
+     Map 12_storage, 230 path nodes. Coordinates from _coop/scenes/maps/12_storage.txt. -->
+<Scene Name="StorageRoomChase" RecordSide="client" Map="12_storage" StartPos="PlayerStartArea_7" Invulnerable="true" KeepSanity="true" StartDelay="3" Length="60">
+	<Host>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Lantern On="true" />
+		<Wait Time="1.5" />
+		<GoTo Target="-52 -2 -31" Dist="0.8" />
+		<Look Target="grunt_in_room" Time="1.5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1.5" />
+		<Script Code="PlaySoundAtEntity(&quot;coop_growl2&quot;, &quot;amb_alert.snt&quot;, &quot;grunt_in_room&quot;, 0, false);" />
+		<Wait Time="1" />
+		<Script Code="SetEntityActive(&quot;grunt_in_room&quot;, true); ShowEnemyPlayerPosition(&quot;grunt_in_room&quot;);" />
+		<Look Target="grunt_in_room" Time="3" />
+		<Run On="true" />
+		<Flee From="grunt_in_room" To="PlayerStartArea_6" LookBack="true" Time="18" />
+		<Run On="false" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="3" />
+		<End />
+	</Host>
+	<Client>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Lantern On="true" />
+		<Wait Time="2" />
+		<Follow Target="partner" Dist="2" Time="5" />
+		<Look Target="candle_floor_14" Time="1.5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1.5" />
+		<Script Code="SetEntityActive(&quot;grunt_in_room&quot;, true); ShowEnemyPlayerPosition(&quot;grunt_in_room&quot;);" />
+		<Look Target="grunt_in_room" Time="3" />
+		<Run On="true" />
+		<Flee From="grunt_in_room" To="PlayerStartArea_6" LookBack="true" Time="18" />
+		<Run On="false" />
+		<Look Target="grunt_in_room" Time="1.5" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="4" />
+	</Client>
+</Scene>

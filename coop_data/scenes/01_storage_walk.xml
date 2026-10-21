@@ -1,0 +1,34 @@
+<!-- Scene 1: the two walk through the storage together with their lanterns, look at the candles and at each other.
+     No enemies and no story events. Map 12_storage: from PlayerStartArea_6 (-51.75 -2 -1.25) south past
+     candle_floor_12 (-60.50 -0.5 -21) to PlayerStartArea_7 (-56.29 -1.95 -31.16), the way scene 4 runs back.
+     Coordinates from _coop/scenes/maps/12_storage.txt. -->
+<Scene Name="StorageWalk" Map="12_storage" StartPos="PlayerStartArea_6" Invulnerable="true" KeepSanity="true" StartDelay="3" Length="50">
+	<Host>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Wait Time="1" />
+		<Lantern On="true" />
+		<Look Target="candle_floor_10" Time="1.5" />
+		<Look Target="partner" Time="1.2" />
+		<Wait Time="0.8" />
+		<GoTo Target="candle_floor_12" Dist="1.5" />
+		<Look Target="candle_floor_12" Time="1.5" />
+		<Wander Radius="1.5" Time="3" />
+		<Look Target="partner" Time="1.2" />
+		<GoTo Target="PlayerStartArea_7" Dist="1" />
+		<Look Target="candle_floor_14" Time="1.5" />
+		<Look Target="partner" Time="1.5" />
+		<WaitUntil PartnerWithin="3" Time="8" />
+		<Wait Time="2" />
+		<End />
+	</Host>
+	<Client>
+		<Script Code="SetSanityDrainDisabled(true); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_1&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_2&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_3&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_4&quot;); RemoveEntityCollideCallback(&quot;Player&quot;, &quot;AreaNoise_5&quot;);" />
+		<Wait Time="2" />
+		<Lantern On="true" />
+		<Follow Target="partner" Dist="2" Time="14" />
+		<Look Target="candle_floor_11" Time="1.5" />
+		<Follow Target="partner" Dist="2" Time="14" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="6" />
+	</Client>
+</Scene>

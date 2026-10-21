@@ -1,0 +1,8 @@
+<Material>
+    <Main DepthTest="True" PhysicsMaterial="Default" Type="SolidDiffuse" />
+    <TextureUnits>
+        <Diffuse AnimFrameTime="" AnimMode="" File="coop_partner_trousers.png" Mipmaps="true" Type="2D" Wrap="Repeat" />
+        <NMap AnimFrameTime="" AnimMode="" File="coop_partner_trousers_nrm.png" Mipmaps="true" Type="2D" Wrap="Repeat" />
+    </TextureUnits>
+    <SpecificVariables />
+</Material>

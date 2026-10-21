@@ -1,0 +1,146 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Every job packages only the mod's own binaries and data (coop_data/), never files of the game itself
+# and never the Steamworks SDK. CI builds have no Steam lobbies (direct IP only); the Windows release
+# zip attached by hand is built with Steam support.
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Win32 Release, MSVC v143)
+        shell: pwsh
+        run: ./build/build_windows.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "ci-$($env:GITHUB_SHA.Substring(0,7))" }
+          ./build/package_windows.ps1 -Version "$version-nosteam"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amnesia-coop-windows-nosteam
+          path: dist/*.zip
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev
+
+      - name: Unpack engine dependencies
+        run: unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+
+      # The prebuilt static libraries in dependencies.zip are not PIC, so link a classic non-PIE executable
+      - name: Configure
+        run: >
+          cmake -S amnesia/src -B build-linux
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POSITION_INDEPENDENT_CODE=OFF
+          -DCMAKE_EXE_LINKER_FLAGS=-no-pie
+          -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -fno-pie"
+          -DCMAKE_C_FLAGS="-fno-pie"
+
+      - name: Build
+        run: cmake --build build-linux --target Amnesia -j"$(nproc)"
+
+      - name: Package
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="ci-${GITHUB_SHA::7}"; fi
+          d="dist/amnesia-coop-$v-linux-x86_64"
+          mkdir -p "$d/_coop/partner"
+          cp build-linux/game/Amnesia.bin.x86_64 "$d/Amnesia_coop.bin.x86_64"
+          cp coop_data/partner/* "$d/_coop/partner/"
+          cp amnesia/src/coop/coop.cfg.example build/package/INSTALL.txt CREDITS.md "$d/"
+          cp LICENSE "$d/LICENSE.txt"
+          echo "UNTESTED Linux build. Copy into the Linux game folder (next to Amnesia.bin.x86_64, which has lib64/) and run ./Amnesia_coop.bin.x86_64" > "$d/LINUX_UNTESTED.txt"
+          tar -C dist -czf "$d.tar.gz" "$(basename "$d")"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amnesia-coop-linux-x86_64
+          path: dist/*.tar.gz
+
+  macos:
+    # Experimental: the prebuilt macOS dependencies are x86_64 only and the project dates from 2013
+    runs-on: macos-15-intel
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack engine dependencies
+        run: unzip -q HPL2/dependencies.zip -d HPL2/dependencies
+
+      - name: Configure
+        run: >
+          cmake -S amnesia/src -B build-macos
+          -DCMAKE_BUILD_TYPE=Release
+          -DIS_APPLE_64=ON
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+          -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -Wno-c++11-narrowing"
+
+      - name: Build
+        run: cmake --build build-macos --target Amnesia -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="ci-${GITHUB_SHA::7}"; fi
+          d="dist/amnesia-coop-$v-macos-x86_64-experimental"
+          mkdir -p "$d/_coop/partner"
+          cp -R build-macos/game/Amnesia.app "$d/Amnesia_coop.app"
+          cp coop_data/partner/* "$d/_coop/partner/"
+          cp amnesia/src/coop/coop.cfg.example build/package/INSTALL.txt CREDITS.md "$d/"
+          cp LICENSE "$d/LICENSE.txt"
+          echo "EXPERIMENTAL, UNTESTED macOS build." > "$d/MACOS_EXPERIMENTAL.txt"
+          tar -C dist -czf "$d.tar.gz" "$(basename "$d")"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amnesia-coop-macos-experimental
+          path: dist/*.tar.gz
+
+  release:
+    # macOS is best-effort: wait for it, but release without it if it failed
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success'
+    needs: [windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          fail_on_unmatched_files: false
+          body: |
+            Two-player co-op for Amnesia: The Dark Descent. **You need your own copy of the game**; no game files are included.
+
+            - `*-windows.zip` (if attached): Windows build with Steam lobbies, built and tested on Windows.
+            - `*-windows-nosteam.zip`: Windows CI build, direct IP only.
+            - `*-linux-x86_64.tar.gz`: Linux CI build, **untested**.
+            - `*-macos-*-experimental.tar.gz`: macOS CI build, **experimental, untested** (only if it built).
+
+            How to install and play over the network: [docs/NETWORK_PLAY.md](https://github.com/${{ github.repository }}/blob/main/docs/NETWORK_PLAY.md)

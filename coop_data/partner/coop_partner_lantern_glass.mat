@@ -1,0 +1,7 @@
+<Material>
+    <Main DepthTest="True" PhysicsMaterial="Default" Type="SolidDiffuse" />
+    <TextureUnits>
+        <Diffuse AnimFrameTime="" AnimMode="" File="coop_partner_lantern_glass.png" Mipmaps="true" Type="2D" Wrap="Repeat" />
+    </TextureUnits>
+    <SpecificVariables />
+</Material>

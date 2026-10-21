@@ -1,0 +1,41 @@
+<!-- Scene 5: the other half of the morgue, filmed from the client. The two come down from the far door
+     (PlayerStartArea_3, -10.51 0 35.86) into the hall where servant_brute_2 (-6.46 0.02 17.30) stands inactive;
+     it wakes, they turn and run back past the hanging lanterns to PlayerStartArea_4 (-16.39 -0.81 41.27).
+     No story events: the brute is an existing one of the map, only switched on. Map 19_morgue, 106 path nodes.
+     Coordinates from _coop/scenes/maps/19_morgue.txt. -->
+<Scene Name="MorgueHallChase" RecordSide="client" Map="19_morgue" StartPos="PlayerStartArea_3" Invulnerable="true" KeepSanity="true" StartDelay="3" Length="55">
+	<Host>
+		<Wait Time="1" />
+		<Lantern On="true" />
+		<GoTo Target="-9 0 26" Dist="0.8" />
+		<Look Target="servant_brute_2" Time="1.5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1" />
+		<Script Code="PlaySoundAtEntity(&quot;coop_growl5&quot;, &quot;amb_alert.snt&quot;, &quot;servant_brute_2&quot;, 0, false);" />
+		<Wait Time="1" />
+		<Script Code="SetEntityActive(&quot;servant_brute_2&quot;, true); ShowEnemyPlayerPosition(&quot;servant_brute_2&quot;);" />
+		<Look Target="servant_brute_2" Time="2.5" />
+		<Run On="true" />
+		<Flee From="servant_brute_2" To="PlayerStartArea_4" LookBack="true" Time="16" />
+		<Run On="false" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="3" />
+		<End />
+	</Host>
+	<Client>
+		<Wait Time="2" />
+		<Lantern On="true" />
+		<Follow Target="partner" Dist="2" Time="6" />
+		<Look Target="candle_floor_small_1" Time="1.5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1" />
+		<Script Code="SetEntityActive(&quot;servant_brute_2&quot;, true); ShowEnemyPlayerPosition(&quot;servant_brute_2&quot;);" />
+		<Look Target="servant_brute_2" Time="3" />
+		<Run On="true" />
+		<Flee From="servant_brute_2" To="PlayerStartArea_4" LookBack="true" Time="16" />
+		<Run On="false" />
+		<Look Target="servant_brute_2" Time="1.5" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="4" />
+	</Client>
+</Scene>

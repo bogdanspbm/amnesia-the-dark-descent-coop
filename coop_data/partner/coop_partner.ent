@@ -1,0 +1,28 @@
+<Entity>
+    <ModelData>
+        <Entities />
+        <Mesh Filename="coop_partner.dae" />
+        <Bones />
+        <Shapes />
+        <Bodies />
+        <Joints />
+        <Animations>
+            <Animation File="coop_partner_Idle.dae_anim" Name="Idle" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_Walk.dae_anim" Name="Walk" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_Run.dae_anim" Name="Run" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_CrouchIdle.dae_anim" Name="CrouchIdle" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_CrouchWalk.dae_anim" Name="CrouchWalk" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_IdleLantern.dae_anim" Name="IdleLantern" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_WalkLantern.dae_anim" Name="WalkLantern" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_RunLantern.dae_anim" Name="RunLantern" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_CrouchIdleLantern.dae_anim" Name="CrouchIdleLantern" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_CrouchWalkLantern.dae_anim" Name="CrouchWalkLantern" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_Hurt.dae_anim" Name="Hurt" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_Downed.dae_anim" Name="Downed" Speed="1" SpecialEventTime="-1" />
+            <Animation File="coop_partner_Death.dae_anim" Name="Death" Speed="1" SpecialEventTime="-1" />
+        </Animations>
+        <ProcAnimations />
+    </ModelData>
+    <CoopAvatar YawOffset="0" LanternBone="hand_r" LanternMesh="coop_partner_lantern.dae" LanternOffset="-0.1697 0.0754 -0.0051" />
+    <UserDefinedVariables EntitySubType="" EntityType="NPC" />
+</Entity>

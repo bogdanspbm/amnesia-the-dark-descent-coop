@@ -1,0 +1,45 @@
+﻿<!-- Scene 3: the morgue. One looks over the desk while the other keeps watch with the lantern; a brute wakes in the
+     hall, both watch it come, then flee together towards the far door and look back.
+     Map 19_morgue has 106 path nodes. servant_brute_1 (-15.91 0.02 20.42) starts inactive; the players start at
+     PlayerStartArea_2 (-19.40 0.06 26.81), the flight goes to PlayerStartArea_4 (-16.39 -0.81 41.27).
+     Coordinates from _coop/scenes/maps/19_morgue.txt. -->
+<Scene Name="MorgueBrute" Map="19_morgue" StartPos="PlayerStartArea_2" Invulnerable="true" KeepSanity="true" StartDelay="3" Length="70">
+	<Host>
+		<Wait Time="1" />
+		<Lantern On="true" />
+		<GoTo Target="work_desk_door_worn_1" Dist="1.1" />
+		<!-- Interact on a note would open the journal; just read it from the desk -->
+		<Look Target="note_paper01_1" Time="1.5" />
+		<Wait Time="2.5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1.5" />
+		<!-- The brute wakes and comes for us -->
+		<Script Code="SetEntityActive(&quot;servant_brute_1&quot;, true); ShowEnemyPlayerPosition(&quot;servant_brute_1&quot;);" />
+		<Look Target="servant_brute_1" Time="2.5" />
+		<Wait Time="1" />
+		<Run On="true" />
+		<Flee From="servant_brute_1" To="PlayerStartArea_4" LookBack="true" Time="14" />
+		<Run On="false" />
+		<Look Target="servant_brute_1" Time="2" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="3" />
+		<End />
+	</Host>
+	<Client>
+		<Wait Time="1.5" />
+		<Lantern On="true" />
+		<GoTo Target="-19 0 24" Dist="0.8" />
+		<Look Target="hanging_lantern_ceiling_chain_1" Time="1.5" />
+		<Wander Radius="2.5" Time="5" />
+		<Look Target="partner" Time="1" />
+		<Wait Time="1" />
+		<Script Code="SetEntityActive(&quot;servant_brute_1&quot;, true); ShowEnemyPlayerPosition(&quot;servant_brute_1&quot;);" />
+		<Look Target="servant_brute_1" Time="2" />
+		<Wait Time="1" />
+		<Run On="true" />
+		<Flee From="servant_brute_1" To="PlayerStartArea_4" LookBack="true" Time="14" />
+		<Run On="false" />
+		<Look Target="partner" Time="1.5" />
+		<Wait Time="5" />
+	</Client>
+</Scene>
