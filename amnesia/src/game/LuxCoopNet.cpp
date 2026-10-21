@@ -39,6 +39,9 @@
 
 #include <enet/enet.h>
 #include <string.h>
+
+//enet pulls in windows.h, whose PlaySound macro renames iLuxEnemy::PlaySound
+#undef PlaySound
 #include <stdlib.h>
 
 //////////////////////////////////////////////////////////////////////////
@@ -152,6 +155,13 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 	mpMesh = NULL;
 	mpLight = NULL;
 	mpBody = NULL;
+	mpAnimIdle = NULL;
+	mpAnimWalk = NULL;
+	mpAnimRun = NULL;
+	mpAnimCurrent = NULL;
+	mfYawOffset = 0;
+	mfSpeed = 0;
+	mfBobCount = 0;
 	mvPos = 0;
 	mvTargetPos = 0;
 	mfYaw = 0;
@@ -164,19 +174,51 @@ cLuxCoopAvatar::cLuxCoopAvatar()
 
 //-----------------------------------------------------------------------
 
-void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile)
+void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asModelFile, float afYawOffset)
 {
 	if(apMap==NULL || mpMesh) return;
 
 	cWorld *pWorld = apMap->GetWorld();
-	cMesh *pMesh = gpBase->mpEngine->GetResources()->GetMeshManager()->CreateMesh(asMeshFile);
+	cResources *pResources = gpBase->mpEngine->GetResources();
+	mfYawOffset = afYawOffset;
+
+	////////////////////////
+	// The model is an .ent (mesh plus its animations) or a bare mesh
+	tString sMeshFile = asModelFile;
+	iXmlDocument *pEntDoc = NULL;
+	tString sEntPath;
+	if(cString::ToLowerCase(cString::GetFileExt(asModelFile)) == "ent")
+	{
+		sEntPath = cString::To8Char(pResources->GetFileSearcher()->GetFilePath(asModelFile));
+		pEntDoc = sEntPath != "" ? pResources->LoadXmlDocument(sEntPath) : NULL;
+		cXmlElement *pModelData = pEntDoc ? pEntDoc->GetFirstElement("ModelData") : NULL;
+		cXmlElement *pMeshElem = pModelData ? pModelData->GetFirstElement("Mesh") : NULL;
+		sMeshFile = pMeshElem ? pMeshElem->GetAttributeString("Filename") : "";
+		if(sMeshFile == "")
+		{
+			Error("Coop: could not read the mesh of partner entity '%s'\n", asModelFile.c_str());
+			if(pEntDoc) pResources->DestroyXmlDocument(pEntDoc);
+			return;
+		}
+	}
+
+	cMesh *pMesh = pResources->GetMeshManager()->CreateMesh(sMeshFile);
 	if(pMesh==NULL)
 	{
-		Error("Coop: could not load partner mesh '%s'\n", asMeshFile.c_str());
+		Error("Coop: could not load partner mesh '%s'\n", sMeshFile.c_str());
+		if(pEntDoc) pResources->DestroyXmlDocument(pEntDoc);
 		return;
 	}
 
 	mpMesh = pWorld->CreateMeshEntity("coop_partner_mesh", pMesh, false);
+
+	mpAnimIdle = mpAnimWalk = mpAnimRun = mpAnimCurrent = NULL;
+	if(pEntDoc)
+	{
+		cXmlElement *pModelData = pEntDoc->GetFirstElement("ModelData");
+		LoadEntityAnimations(pWorld, pModelData->GetFirstElement("Animations"), sEntPath);
+		pResources->DestroyXmlDocument(pEntDoc);
+	}
 
 	mpLight = pWorld->CreateLightPoint("coop_partner_lantern", "", false);
 	mpLight->SetDiffuseColor(cColor(0.85f, 0.7f, 0.45f, 1.0f));
@@ -202,6 +244,91 @@ void cLuxCoopAvatar::Create(cLuxMap *apMap, const tString& asMeshFile)
 
 //-----------------------------------------------------------------------
 
+void cLuxCoopAvatar::LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimationsElem, const tString& asEntPath)
+{
+	if(apAnimationsElem==NULL) return;
+
+	//Pick idle, walk and run by name, the way the game's characters name them
+	cXmlNodeListIterator it = apAnimationsElem->GetChildIterator();
+	while(it.HasNext())
+	{
+		cXmlElement *pAnimElem = it.Next()->ToElement();
+		tString sName = pAnimElem->GetAttributeString("Name");
+		tString sFile = pAnimElem->GetAttributeString("File");
+		tString sLowName = cString::ToLowerCase(sName);
+
+		cAnimationState **ppSlot = NULL;
+		if(mpAnimIdle==NULL && sLowName.find("idle") != tString::npos)			ppSlot = &mpAnimIdle;
+		else if(mpAnimWalk==NULL && sLowName.find("walk") != tString::npos)		ppSlot = &mpAnimWalk;
+		else if(mpAnimRun==NULL && sLowName.find("run") != tString::npos)		ppSlot = &mpAnimRun;
+		if(ppSlot==NULL) continue;
+
+		//Some of the game's .ent files keep absolute paths from the developers' machines; the files sit next to the .ent
+		bool bAbsolute = sFile.find(':') != tString::npos || (sFile.length() > 0 && sFile[0] == '/');
+		if(bAbsolute)
+		{
+			size_t lRedist = cString::ToLowerCase(sFile).find("redist/");
+			if(lRedist != tString::npos)	sFile = sFile.substr(lRedist + 7);
+			else							sFile = cString::GetFileName(sFile);
+		}
+		else if(cString::GetFilePath(sFile).length() <= 1) sFile = cString::SetFilePath(sFile, cString::GetFilePath(asEntPath));
+
+		cAnimation *pAnim = apWorld->GetResources()->GetAnimationManager()->CreateAnimation(sFile);
+		if(pAnim==NULL) continue;
+
+		cAnimationState *pState = mpMesh->AddAnimation(pAnim, sName, pAnimElem->GetAttributeFloat("Speed", 1.0f));
+		pState->SetLoop(true);
+		*ppSlot = pState;
+	}
+
+	if(mpAnimRun==NULL) mpAnimRun = mpAnimWalk;
+	if(mpAnimWalk==NULL) mpAnimWalk = mpAnimRun;
+	Log("Coop: partner animations idle '%s' walk '%s' run '%s'\n",
+		mpAnimIdle ? mpAnimIdle->GetName().c_str() : "-", mpAnimWalk ? mpAnimWalk->GetName().c_str() : "-", mpAnimRun ? mpAnimRun->GetName().c_str() : "-");
+
+	PlayAnimState(mpAnimIdle);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopAvatar::PlayAnimState(cAnimationState *apState)
+{
+	if(apState==NULL || apState == mpAnimCurrent) return;
+
+	if(mpAnimCurrent)
+	{
+		mpAnimCurrent->FadeOut(0.25f);
+		apState->SetActive(true);
+		if(apState->IsFading()==false) apState->SetWeight(0);
+		apState->FadeIn(0.25f);
+	}
+	else
+	{
+		apState->SetActive(true);
+		apState->SetWeight(1);
+	}
+	mpAnimCurrent = apState;
+}
+
+void cLuxCoopAvatar::UpdateAnimation(float afTimeStep, float afSpeed)
+{
+	if(mpAnimCurrent==NULL) return;
+
+	mfSpeed = mfSpeed*0.8f + afSpeed*0.2f;
+	mfBobCount += afTimeStep * cMath::Min(mfSpeed, 4.0f) * 4.0f;
+
+	if(mfSpeed < 0.3f)		PlayAnimState(mpAnimIdle ? mpAnimIdle : mpAnimWalk);
+	else if(mfSpeed < 3.0f)	PlayAnimState(mpAnimWalk);
+	else					PlayAnimState(mpAnimRun);
+
+	//Match the steps to how fast the partner moves
+	if(mpAnimCurrent == mpAnimWalk && mfSpeed >= 0.3f)	mpAnimCurrent->SetSpeed(cMath::Clamp(mfSpeed / 1.6f, 0.5f, 1.8f));
+	else if(mpAnimCurrent == mpAnimRun)					mpAnimCurrent->SetSpeed(cMath::Clamp(mfSpeed / 4.0f, 0.6f, 1.6f));
+	else												mpAnimCurrent->SetSpeed(1.0f);
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxCoopAvatar::Destroy(cLuxMap *apMap)
 {
 	if(apMap)
@@ -216,6 +343,7 @@ void cLuxCoopAvatar::Destroy(cLuxMap *apMap)
 
 void cLuxCoopAvatar::OnWorldDestroyed()
 {
+	mpAnimIdle = mpAnimWalk = mpAnimRun = mpAnimCurrent = NULL;
 	mpMesh = NULL;
 	mpLight = NULL;
 	mpBody = NULL;
@@ -263,7 +391,10 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 
 	//States arrive at ~20 Hz, so close most of the gap within about one packet
 	float fT = cMath::Min(1.0f, afTimeStep * 15.0f);
-	mvPos += (mvTargetPos - mvPos) * fT;
+	cVector3f vMove = (mvTargetPos - mvPos) * fT;
+	mvPos += vMove;
+	vMove.y = 0;
+	UpdateAnimation(afTimeStep, (afTimeStep > 0 && mbDowned==false) ? vMove.Length() / afTimeStep : 0);
 	mfYaw = cMath::TurnAngleRad(mfYaw, mfTargetYaw, k2Pif * afTimeStep);
 
 	ApplyTransform();
@@ -274,9 +405,11 @@ void cLuxCoopAvatar::Update(float afTimeStep)
 void cLuxCoopAvatar::ApplyTransform()
 {
 	//A downed partner lies on the floor
-	cMatrixf mtxTransform = cMath::MatrixRotateY(mfYaw);
+	cMatrixf mtxTransform = cMath::MatrixRotateY(mfYaw + mfYawOffset);
 	if(mbDowned) mtxTransform = cMath::MatrixMul(mtxTransform, cMath::MatrixRotateX(-kPi2f));
-	mtxTransform.SetTranslation(mvPos + (mbDowned ? cVector3f(0, 0.25f, 0) : cVector3f(0)));
+	//Models without a walk animation bob a little while moving, so they don't just glide
+	float fBob = (mpAnimWalk==NULL && mbDowned==false && mfSpeed > 0.3f) ? std::fabs(sin(mfBobCount)) * 0.05f : 0;
+	mtxTransform.SetTranslation(mvPos + (mbDowned ? cVector3f(0, 0.25f, 0) : cVector3f(0, fBob, 0)));
 	mpMesh->SetMatrix(mtxTransform);
 
 	mpLight->SetPosition(mvPos + cVector3f(0, 1.4f, 0));
@@ -296,7 +429,8 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	msAddress = "127.0.0.1";
 	mlPort = 27960;
 	msName = "Player";
-	msAvatarMesh = "servant_grunt.dae";
+	msAvatarModel = "alexander.ent";
+	mfAvatarYawOffset = 0;
 	mfStateSendInterval = 1.0f / 20.0f;
 
 	mpHost = NULL;
@@ -361,7 +495,8 @@ void cLuxCoopNet::LoadMainConfig()
 	msAddress = pCfg->GetString("Network", "Address", "127.0.0.1");
 	mlPort = pCfg->GetInt("Network", "Port", 27960);
 	msName = pCfg->GetString("Player", "Name", "Player");
-	msAvatarMesh = pCfg->GetString("Player", "AvatarMesh", "servant_grunt.dae");
+	msAvatarModel = pCfg->GetString("Player", "AvatarModel", msAvatarModel);
+	mfAvatarYawOffset = cMath::ToRad(pCfg->GetFloat("Player", "AvatarYawOffset", 0));
 
 	int lRate = cMath::Max(5, pCfg->GetInt("Network", "StateRate", 20));
 	mfStateSendInterval = 1.0f / (float)lRate;
@@ -719,7 +854,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 
 	m_mapSentBodies.clear();
 	m_mapClientOwnedBodies.clear();
-	mAvatar.Create(apMap, msAvatarMesh);
+	mAvatar.Create(apMap, msAvatarModel, mfAvatarYawOffset);
 	if(IsConnected()) SendMapInfo();
 }
 
@@ -742,7 +877,7 @@ void cLuxCoopNet::CreateWorldEntities(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
-	mAvatar.Create(apMap, msAvatarMesh);
+	mAvatar.Create(apMap, msAvatarModel, mfAvatarYawOffset);
 }
 
 //-----------------------------------------------------------------------

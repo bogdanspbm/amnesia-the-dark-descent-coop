@@ -135,7 +135,7 @@ class cLuxCoopAvatar
 public:
 	cLuxCoopAvatar();
 
-	void Create(cLuxMap *apMap, const tString& asMeshFile);
+	void Create(cLuxMap *apMap, const tString& asModelFile, float afYawOffset);
 	void Destroy(cLuxMap *apMap);
 	void OnWorldDestroyed();
 
@@ -149,8 +149,18 @@ public:
 
 private:
 	void ApplyTransform();
+	void LoadEntityAnimations(cWorld *apWorld, cXmlElement *apAnimationsElem, const tString& asEntPath);
+	void UpdateAnimation(float afTimeStep, float afSpeed);
+	void PlayAnimState(cAnimationState *apState);
 
 	cMeshEntity *mpMesh;
+	cAnimationState *mpAnimIdle;
+	cAnimationState *mpAnimWalk;
+	cAnimationState *mpAnimRun;
+	cAnimationState *mpAnimCurrent;
+	float mfYawOffset;
+	float mfSpeed;
+	float mfBobCount;
 	cLightPoint *mpLight;
 	iCharacterBody *mpBody;
 
@@ -294,7 +304,8 @@ private:
 	tString msAddress;
 	int mlPort;
 	tString msName;
-	tString msAvatarMesh;
+	tString msAvatarModel;
+	float mfAvatarYawOffset;
 	float mfStateSendInterval;
 
 	_ENetHost *mpHost;

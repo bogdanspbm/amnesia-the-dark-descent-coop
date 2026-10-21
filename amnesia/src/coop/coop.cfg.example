@@ -3,4 +3,6 @@
      The host must allow UDP port 27960 through the firewall.
      Sections are top-level elements (like the game's own .cfg files); don't wrap them in a root element. -->
 <Network Mode="host" Address="127.0.0.1" Port="27960" StateRate="20" />
-<Player Name="Player" AvatarMesh="servant_grunt.dae" />
+<!-- AvatarModel: an .ent (mesh plus its idle/walk/run animations) or a bare mesh.
+     AvatarYawOffset: degrees to turn the model if it faces the wrong way. -->
+<Player Name="Player" AvatarModel="alexander.ent" AvatarYawOffset="0" />
