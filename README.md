@@ -73,14 +73,7 @@
 Результат — `amnesia\redist\Amnesia.exe`; скопируйте его в папку игры как `Amnesia_coop.exe`, а
 `coop_data\partner\*` — в `<папка игры>\_coop\partner\`.
 
-**Linux** (экспериментально, 64-бит):
-
-```bash
-sudo apt install build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev
-unzip HPL2/dependencies.zip -d HPL2/dependencies
-cmake -S amnesia/src -B build-linux -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=OFF -DCMAKE_EXE_LINKER_FLAGS=-no-pie
-cmake --build build-linux --target Amnesia -j
-```
+**Linux / macOS** (экспериментально): команды — в [docs/BUILDING.md](docs/BUILDING.md#linux-экспериментально-в-игре-не-проверено), их же выполняет CI.
 
 Steam-лобби в CMake включаются через `-DSTEAMWORKS_SDK_DIR=<sdk>`. Подробности по CI — `.github/workflows/build.yml`.
 

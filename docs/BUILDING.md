@@ -99,17 +99,27 @@ INSTALL.txt, LICENSE.txt, CREDITS.md
 ### Linux (экспериментально, в игре не проверено)
 
 ```bash
-sudo apt install build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev
+sudo apt install build-essential cmake perl patchelf libgl1-mesa-dev libglu1-mesa-dev libx11-dev zlib1g-dev
 unzip HPL2/dependencies.zip -d HPL2/dependencies
-cmake -S amnesia/src -B build-linux -DCMAKE_BUILD_TYPE=Release \
+# в zip симлинки .so/.dylib сохранены как текстовые файлы "link <цель>" — превращаем обратно в ссылки
+find HPL2/dependencies -type f -size -200c | while read -r f; do
+  c=$(head -c 200 "$f"); case "$c" in "link "*) ln -sf "${c#link }" "$f.tmp" && mv -f "$f.tmp" "$f";; esac
+done
+# CMake ищет библиотеки в lib/linux/lib — кладём туда 64-битные
+rm -rf HPL2/dependencies/lib/linux/lib && cp -a HPL2/dependencies/lib/linux/lib64 HPL2/dependencies/lib/linux/lib
+cmake -S amnesia/src -B build-linux -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DOPENGL_gl_LIBRARY=/usr/lib/x86_64-linux-gnu/libGL.so -DOPENGL_glu_LIBRARY=/usr/lib/x86_64-linux-gnu/libGLU.so \
       -DCMAKE_POSITION_INDEPENDENT_CODE=OFF -DCMAKE_EXE_LINKER_FLAGS=-no-pie \
       -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -fno-pie" -DCMAKE_C_FLAGS="-fno-pie"
 cmake --build build-linux --target Amnesia -j"$(nproc)"
+cp build-linux/Amnesia.bin.x86 Amnesia_coop.bin.x86_64
+patchelf --set-rpath '$ORIGIN/lib64' Amnesia_coop.bin.x86_64
 ```
 
-- 64-битная сборка берёт готовые библиотеки из `HPL2/dependencies/lib/linux/lib64`; результат —
-  `build-linux/game/Amnesia.bin.x86_64` с rpath `$ORIGIN/lib64`. Кладите его в Linux-версию игры (там уже есть
-  `lib64/`) как `Amnesia_coop.bin.x86_64`, а модель — в `_coop/partner/`.
+- Результат — `build-linux/Amnesia.bin.x86`: имя «x86» досталось от старой CMake-логики, но это 64-битный ELF.
+  `patchelf` ставит ему rpath `$ORIGIN/lib64`. Кладите его в Linux-версию игры (там уже есть `lib64/` с
+  libIL, SDL2, OpenAL и т. д.) как `Amnesia_coop.bin.x86_64`, а модель — в `_coop/partner/`.
+- `CMAKE_POLICY_VERSION_MINIMUM=3.5` нужен для CMake 4 (в проекте `cmake_minimum_required(2.8)`).
 - **`-no-pie` обязателен**: статические библиотеки из `dependencies.zip` собраны без PIC.
 - `perl` нужен для `HPL2/core/buildcounter.pl` (генерирует Build ID).
 - Steam: `-DSTEAMWORKS_SDK_DIR=<sdk>` (линкуется `redistributable_bin/linux64/libsteam_api.so`; не проверялось).
@@ -119,11 +129,14 @@ cmake --build build-linux --target Amnesia -j"$(nproc)"
 Готовые библиотеки для macOS — только x86_64 (`lib/macosx64`), проект 2013 года:
 
 ```bash
-unzip HPL2/dependencies.zip -d HPL2/dependencies
-cmake -S amnesia/src -B build-macos -DCMAKE_BUILD_TYPE=Release -DIS_APPLE_64=ON \
+# распаковка и исправление симлинков — как для Linux
+cmake -S amnesia/src -B build-macos -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DIS_APPLE_64=ON -DAMNESIA_BUILD_LAUNCHER=OFF \
       -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
 cmake --build build-macos --target Amnesia
 ```
+
+`AMNESIA_BUILD_LAUNCHER=OFF` — у macOS-лаунчера настроек в исходниках нет prefix-заголовка, игре он не нужен.
 
 CI пробует это на Intel-раннере с `continue-on-error`; на Apple Silicon — только через Rosetta.
 
@@ -147,6 +160,9 @@ CI пробует это на Intel-раннере с `continue-on-error`; на 
 | Игра: `MSVCP140.dll` не найден | Установите VC++ Redistributable **x86**. |
 | Linux: `relocation R_X86_64_32 ... recompile with -fPIE` | Не добавлен `-no-pie`. |
 | Linux: `Could not find library ...` | Не распакован `dependencies.zip` в `HPL2/dependencies`. |
+| Linux: `libvorbisfile.so:1: syntax error` при линковке | Симлинки из zip не исправлены, или линкуется 32-битный `lib/` — см. команды выше. |
+| Linux: `OPENGL_gl_LIBRARY ... NOTFOUND` | Укажите `-DOPENGL_gl_LIBRARY`/`-DOPENGL_glu_LIBRARY` явно. |
+| CMake 4: `Compatibility with CMake < 3.5 has been removed` | Добавьте `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`. |
 
 ---
 
@@ -203,16 +219,20 @@ the game folder.
 
 ### Linux (experimental, untested in game)
 
-See the commands in the Russian section: install `build-essential cmake perl libgl1-mesa-dev libglu1-mesa-dev
-libx11-dev zlib1g-dev`, unzip the dependencies, configure with **`-no-pie`** (the prebuilt static libraries are not
-PIC) and build the `Amnesia` target. 64-bit uses `lib/linux/lib64`; the binary `Amnesia.bin.x86_64` has rpath
-`$ORIGIN/lib64`, so put it into the Linux game folder as `Amnesia_coop.bin.x86_64`. Perl runs `buildcounter.pl`.
-Steam: `-DSTEAMWORKS_SDK_DIR=<sdk>` (untested).
+Use the commands in the Russian section (they are the ones CI runs). The key points:
+- `dependencies.zip` stores the `.so`/`.dylib` symlinks as small text files `link <target>`; turn them back into links;
+- the find modules look in `lib/linux/lib`, so copy `lib64` over it for a 64-bit build;
+- pass the system `libGL.so`/`libGLU.so` explicitly, and `CMAKE_POLICY_VERSION_MINIMUM=3.5` for CMake 4;
+- link with **`-no-pie`** (the prebuilt static libraries are not PIC);
+- the output `build-linux/Amnesia.bin.x86` is in fact x86_64; set its rpath to `$ORIGIN/lib64` with `patchelf` and put
+  it into the Linux game folder as `Amnesia_coop.bin.x86_64`.
+Perl runs `buildcounter.pl`. Steam: `-DSTEAMWORKS_SDK_DIR=<sdk>` (untested).
 
 ### macOS (experimental)
 
-x86_64 only (`lib/macosx64`): `-DIS_APPLE_64=ON -DCMAKE_OSX_ARCHITECTURES=x86_64`. CI tries it on an Intel runner
-with `continue-on-error`.
+x86_64 only (`lib/macosx64`): fix the symlinks as on Linux, then configure with `-DIS_APPLE_64=ON
+-DCMAKE_OSX_ARCHITECTURES=x86_64 -DAMNESIA_BUILD_LAUNCHER=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5`. CI builds it on an
+Intel runner with `continue-on-error`; untested in game.
 
 ### FBX
 
@@ -231,3 +251,5 @@ longer available and the game does not use it. Enable with `-DHPL2_WITH_FBX=ON` 
 | "Steam support files are missing" in game | `_coop\steam\steam_api.dll` is missing. |
 | `MSVCP140.dll` missing | Install the VC++ Redistributable **x86**. |
 | Linux `relocation R_X86_64_32 ... -fPIE` | Add `-no-pie`. |
+| Linux `libvorbisfile.so:1: syntax error` | Symlinks from the zip not fixed, or the 32-bit `lib/` is linked. |
+| CMake 4 `Compatibility with CMake < 3.5 has been removed` | Add `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`. |
