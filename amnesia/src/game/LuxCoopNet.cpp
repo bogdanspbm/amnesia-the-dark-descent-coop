@@ -1204,6 +1204,13 @@ void cLuxCoopNet::Update(float afTimeStep)
 		if(mfDevAutoStartCount <= 0 && IsConnected() && gpBase->mpMapHandler->MapIsLoaded()==false)
 		{
 			Log("Coop: Dev AutoStart, starting the game\n");
+			//Without the menu no profile has been picked yet, and the saves to continue from live in it
+			if(gpBase->mpUserConfig==NULL)
+			{
+				gpBase->CreateProfile(gpBase->msDefaultProfileName);
+				gpBase->SetProfile(gpBase->msDefaultProfileName);
+				gpBase->InitUserConfig();
+			}
 			if(mbDevAutoContinue && CanContinueCoopGame())	ContinueCoopGame();
 			else											StartCoopGame();
 		}
