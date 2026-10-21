@@ -355,6 +355,7 @@ private:
 	void SaveLobbySettings();
 	tWString GetConfigFile();
 	void StartLocalGame();
+	void CreateAvatar(cLuxMap *apMap);
 
 	void SendHello();
 	void SendPlayerState();

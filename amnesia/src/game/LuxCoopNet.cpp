@@ -1038,15 +1038,7 @@ void cLuxCoopNet::OnMapEnter(cLuxMap *apMap)
 	m_mapClientOwnedBodies.clear();
 	m_mapPropNameHashes.clear();
 	mfPropNameHashTime = -1000.0f;
-
-	//The mod's partner model lives outside the game's folders, so they are left untouched
-	if(mbAvatarDirAdded==false && mAvatarSettings.msModelDir != "")
-	{
-		mbAvatarDirAdded = true;
-		tWString sDir = cString::To16Char(mAvatarSettings.msModelDir);
-		if(cPlatform::FolderExists(sDir)) gpBase->mpEngine->GetResources()->AddResourceDir(sDir, true);
-	}
-	mAvatar.Create(apMap, mAvatarSettings);
+	CreateAvatar(apMap);
 	if(IsConnected()) SendMapInfo();
 }
 
@@ -1069,6 +1061,19 @@ void cLuxCoopNet::CreateWorldEntities(cLuxMap *apMap)
 {
 	if(IsActive()==false) return;
 
+	CreateAvatar(apMap);
+}
+
+void cLuxCoopNet::CreateAvatar(cLuxMap *apMap)
+{
+	//The mod's partner model lives outside the game's folders, so they are left untouched.
+	//Added before the first avatar is made, whichever of map enter or world creation comes first.
+	if(mbAvatarDirAdded==false && mAvatarSettings.msModelDir != "")
+	{
+		mbAvatarDirAdded = true;
+		tWString sDir = cString::To16Char(mAvatarSettings.msModelDir);
+		if(cPlatform::FolderExists(sDir)) gpBase->mpEngine->GetResources()->AddResourceDir(sDir, true);
+	}
 	mAvatar.Create(apMap, mAvatarSettings);
 }
 
