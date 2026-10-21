@@ -34,6 +34,7 @@
 #include "LuxMainMenu_Options.h"
 #include "LuxMainMenu_KeyConfig.h"
 #include "LuxMainMenu_StartGame.h"
+#include "LuxMainMenu_Coop.h"
 #include "LuxMainMenu_LoadGame.h"
 #include "LuxMainMenu_CustomStory.h"
 
@@ -147,6 +148,7 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 	mvWindows[eLuxMainMenuWindow_KeyConfig] = hplNew(cLuxMainMenu_KeyConfig, (mpGuiSet, mpGuiSkin));
 	mvWindows[eLuxMainMenuWindow_LoadGame] = hplNew(cLuxMainMenu_LoadGame, (mpGuiSet, mpGuiSkin));
 	mvWindows[eLuxMainMenuWindow_StartGame] = hplNew(cLuxMainMenu_StartGame, (mpGuiSet, mpGuiSkin));
+	mvWindows[eLuxMainMenuWindow_Coop] = hplNew(cLuxMainMenu_Coop, (mpGuiSet, mpGuiSkin));
 
 
 	cLuxMainMenu_CustomStory* pCustomStoryWindow = hplNew(cLuxMainMenu_CustomStory,(mpGuiSet, mpGuiSkin));
@@ -512,6 +514,7 @@ void cLuxMainMenu::SetWindowActive(eLuxMainMenuWindow aWindow)
 	case eLuxMainMenuWindow_LoadGame:
 	case eLuxMainMenuWindow_Profiles:
 	case eLuxMainMenuWindow_StartGame:
+	case eLuxMainMenuWindow_Coop:
 		mpGuiSet->SetDrawFocus(bHasGamepad);
 		break;
 	default:
@@ -990,6 +993,7 @@ void cLuxMainMenu::CreateTopMenuGui()
 	vLabels.push_back(kTranslate("MainMenu", "Continue"));
 	vLabels.push_back(kTranslate("MainMenu","Back To Game"));
 	vLabels.push_back(kTranslate("MainMenu","Start Game"));
+	vLabels.push_back(_W("Co-op"));
 	vLabels.push_back(kTranslate("MainMenu","Load Game"));
 	vLabels.push_back(kTranslate("MainMenu","Custom Map"));
 	vLabels.push_back(kTranslate("MainMenu","Options"));
@@ -1062,6 +1066,17 @@ void cLuxMainMenu::CreateTopMenuGui()
 	}
 	SetupTopMenuLabel(pLabel);
 	vPos.y += fRowAdd;
+
+	///////////////
+	//Co-op lobby
+	if(gpBase->mbPTestActivated==false && gpBase->mpMapHandler->MapIsLoaded()==false)
+	{
+		const tWString& sCoopLabel = kTranslate("Coop","MenuLabel");
+		pLabel = mpGuiSet->CreateWidgetLabel(vPos,0,sCoopLabel.empty() ? _W("Co-op") : sCoopLabel);
+		pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(PressCoop));
+		SetupTopMenuLabel(pLabel);
+		vPos.y += fRowAdd;
+	}
 
 	///////////////
 	//Load game
@@ -1631,6 +1646,18 @@ bool cLuxMainMenu::PressCustomStory(iWidget* apWidget, const cGuiMessageData& aD
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressCustomStory);
+
+//-----------------------------------------------------------------------
+
+bool cLuxMainMenu::PressCoop(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	if(mbTopMenuVisible==false)
+		return true;
+
+	SetWindowActive(eLuxMainMenuWindow_Coop);
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressCoop);
 
 //-----------------------------------------------------------------------
 

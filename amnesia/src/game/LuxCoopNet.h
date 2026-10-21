@@ -47,6 +47,7 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_PlayerState,
 	eLuxCoopMsg_MapInfo,
 	eLuxCoopMsg_BodyStates,
+	eLuxCoopMsg_StartGame,
 };
 
 //----------------------------------------------
@@ -166,6 +167,17 @@ public:
 	const tString& GetPartnerName(){ return msPartnerName; }
 	const tString& GetPartnerMap(){ return msPartnerMap; }
 
+	/////////////////////////
+	// Lobby
+	bool Host(const tString& asName, int alPort);
+	bool Join(const tString& asName, const tString& asAddress, int alPort);
+	void Leave();
+	void StartCoopGame();
+
+	const tString& GetName(){ return msName; }
+	const tString& GetAddress(){ return msAddress; }
+	int GetPort(){ return mlPort; }
+
 private:
 	bool StartNetwork();
 	void StopNetwork();
@@ -176,6 +188,11 @@ private:
 	void HandlePlayerState(cLuxCoopBuffer &aBuffer);
 	void HandleMapInfo(cLuxCoopBuffer &aBuffer);
 	void HandleBodyStates(cLuxCoopBuffer &aBuffer);
+	void HandleStartGame(cLuxCoopBuffer &aBuffer);
+
+	void SaveLobbySettings();
+	tWString GetConfigFile();
+	void StartLocalGame();
 
 	void SendHello();
 	void SendPlayerState();

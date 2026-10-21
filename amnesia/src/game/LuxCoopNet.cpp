@@ -26,6 +26,7 @@
 #include "LuxMoveState_Normal.h"
 #include "LuxProp.h"
 #include "LuxPlayerState_Interact.h"
+#include "LuxMainMenu.h"
 
 #include <enet/enet.h>
 #include <string.h>
@@ -269,7 +270,10 @@ void cLuxCoopAvatar::ApplyTransform()
 cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 {
 	mMode = eLuxCoopMode_Off;
+	msAddress = "127.0.0.1";
 	mlPort = 27960;
+	msName = "Player";
+	msAvatarMesh = "servant_grunt.dae";
 	mfStateSendInterval = 1.0f / 20.0f;
 
 	mpHost = NULL;
@@ -299,14 +303,10 @@ cLuxCoopNet::~cLuxCoopNet()
 
 void cLuxCoopNet::LoadMainConfig()
 {
-	//coop.cfg sits next to the exe so both players can edit it without touching the game configs.
-	//AMNESIA_COOP_CFG picks another file, eg to run host and client on one PC for testing.
-	const char *pCfgEnv = getenv("AMNESIA_COOP_CFG");
-	tWString sCfgFile = (pCfgEnv && pCfgEnv[0]) ? cString::To16Char(pCfgEnv) : _W("coop.cfg");
-	cConfigFile *pCfg = hplNew(cConfigFile, (sCfgFile));
+	cConfigFile *pCfg = hplNew(cConfigFile, (GetConfigFile()));
 	if(pCfg->Load()==false)
 	{
-		Log("Coop: no coop.cfg found, co-op is off\n");
+		Log("Coop: no coop.cfg found, using lobby defaults\n");
 		hplDelete(pCfg);
 		return;
 	}
@@ -327,6 +327,53 @@ void cLuxCoopNet::LoadMainConfig()
 	hplDelete(pCfg);
 
 	Log("Coop: mode '%s', address %s:%d, name '%s'\n", sMode.c_str(), msAddress.c_str(), mlPort, msName.c_str());
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxCoopNet::Host(const tString& asName, int alPort)
+{
+	StopNetwork();
+	msName = asName;
+	mlPort = alPort;
+	mMode = eLuxCoopMode_Host;
+	SaveLobbySettings();
+	return StartNetwork();
+}
+
+bool cLuxCoopNet::Join(const tString& asName, const tString& asAddress, int alPort)
+{
+	StopNetwork();
+	msName = asName;
+	msAddress = asAddress;
+	mlPort = alPort;
+	mMode = eLuxCoopMode_Client;
+	SaveLobbySettings();
+	return StartNetwork();
+}
+
+void cLuxCoopNet::Leave()
+{
+	StopNetwork();
+	mMode = eLuxCoopMode_Off;
+	msPartnerName = "";
+	msPartnerMap = "";
+	mAvatar.SetTarget(0, 0, false, false);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::StartCoopGame()
+{
+	if(IsHost()==false || IsConnected()==false) return;
+
+	cLuxCoopBuffer buffer;
+	buffer.AddByte(eLuxCoopMsg_StartGame);
+	buffer.AddByte(gpBase->mbHardMode ? 1 : 0);
+	Send(buffer, kCoopChannel_Reliable, true);
+	enet_host_flush(mpHost);
+
+	StartLocalGame();
 }
 
 //-----------------------------------------------------------------------
@@ -553,6 +600,7 @@ void cLuxCoopNet::HandlePacket(_ENetPacket *apPacket)
 	case eLuxCoopMsg_PlayerState:	if(mbHandshakeDone) HandlePlayerState(buffer); break;
 	case eLuxCoopMsg_MapInfo:		if(mbHandshakeDone) HandleMapInfo(buffer); break;
 	case eLuxCoopMsg_BodyStates:	if(mbHandshakeDone) HandleBodyStates(buffer); break;
+	case eLuxCoopMsg_StartGame:		if(mbHandshakeDone && IsHost()==false) HandleStartGame(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -647,6 +695,55 @@ void cLuxCoopNet::HandleBodyStates(cLuxCoopBuffer &aBuffer)
 		pBody->SetLinearVelocity(vLinVel);
 		pBody->SetAngularVelocity(vAngVel);
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::HandleStartGame(cLuxCoopBuffer &aBuffer)
+{
+	bool bHardMode = aBuffer.GetByte() != 0;
+	if(aBuffer.HasReadError()) return;
+
+	if(gpBase->mpMapHandler->MapIsLoaded())
+	{
+		Warning("Coop: host started a game but we are already in one, ignoring\n");
+		return;
+	}
+
+	Log("Coop: host started the game\n");
+	gpBase->mbHardMode = bHardMode;
+	StartLocalGame();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCoopNet::StartLocalGame()
+{
+	gpBase->SetCustomStory(NULL);
+	gpBase->mpMainMenu->SetWindowActive(eLuxMainMenuWindow_LastEnum);
+	gpBase->mpMainMenu->ExitMenu(eLuxMainMenuExit_StartGame);
+}
+
+//-----------------------------------------------------------------------
+
+tWString cLuxCoopNet::GetConfigFile()
+{
+	//coop.cfg sits next to the exe so both players can edit it without touching the game configs.
+	//AMNESIA_COOP_CFG picks another file, eg to run host and client on one PC for testing.
+	const char *pCfgEnv = getenv("AMNESIA_COOP_CFG");
+	return (pCfgEnv && pCfgEnv[0]) ? cString::To16Char(pCfgEnv) : _W("coop.cfg");
+}
+
+void cLuxCoopNet::SaveLobbySettings()
+{
+	//Remember what was typed in the lobby; Mode is left alone so the game does not auto-connect next start
+	cConfigFile *pCfg = hplNew(cConfigFile, (GetConfigFile()));
+	pCfg->Load();
+	pCfg->SetString("Player", "Name", msName);
+	pCfg->SetString("Network", "Address", msAddress);
+	pCfg->SetInt("Network", "Port", mlPort);
+	pCfg->Save();
+	hplDelete(pCfg);
 }
 
 //-----------------------------------------------------------------------

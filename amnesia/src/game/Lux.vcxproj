@@ -198,6 +198,7 @@
     <ClCompile Include="LuxGlobalDataHandler.cpp" />
     <ClCompile Include="LuxHintHandler.cpp" />
     <ClCompile Include="LuxCoopNet.cpp" />
+    <ClCompile Include="LuxMainMenu_Coop.cpp" />
     <ClCompile Include="..\coop\enet\callbacks.c" />
     <ClCompile Include="..\coop\enet\compress.c" />
     <ClCompile Include="..\coop\enet\host.c" />
@@ -317,6 +318,7 @@
     <ClInclude Include="LuxGlobalDataHandler.h" />
     <ClInclude Include="LuxHintHandler.h" />
     <ClInclude Include="LuxCoopNet.h" />
+    <ClInclude Include="LuxMainMenu_Coop.h" />
     <ClInclude Include="LuxInputHandler.h" />
     <ClInclude Include="LuxInsanityHandler.h" />
     <ClInclude Include="LuxInventory.h" />

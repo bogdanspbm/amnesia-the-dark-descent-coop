@@ -38,6 +38,8 @@ enum eLuxMainMenuWindow
 	// HARDMODE
 	eLuxMainMenuWindow_StartGame,
 
+	eLuxMainMenuWindow_Coop,
+
 	eLuxMainMenuWindow_LastEnum,
 };
 
@@ -189,6 +191,9 @@ private:
 
 	bool PressCustomStory(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressCustomStory);
+
+	bool PressCoop(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressCoop);
 
 	bool PressExit(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressExit);
