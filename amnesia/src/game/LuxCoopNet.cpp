@@ -29,6 +29,7 @@
 
 #include <enet/enet.h>
 #include <string.h>
+#include <stdlib.h>
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTANTS
@@ -298,8 +299,11 @@ cLuxCoopNet::~cLuxCoopNet()
 
 void cLuxCoopNet::LoadMainConfig()
 {
-	//coop.cfg sits next to the exe so both players can edit it without touching the game configs
-	cConfigFile *pCfg = hplNew(cConfigFile, (_W("coop.cfg")));
+	//coop.cfg sits next to the exe so both players can edit it without touching the game configs.
+	//AMNESIA_COOP_CFG picks another file, eg to run host and client on one PC for testing.
+	const char *pCfgEnv = getenv("AMNESIA_COOP_CFG");
+	tWString sCfgFile = (pCfgEnv && pCfgEnv[0]) ? cString::To16Char(pCfgEnv) : _W("coop.cfg");
+	cConfigFile *pCfg = hplNew(cConfigFile, (sCfgFile));
 	if(pCfg->Load()==false)
 	{
 		Log("Coop: no coop.cfg found, co-op is off\n");
