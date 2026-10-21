@@ -63,6 +63,12 @@ jobs:
           -DCMAKE_CXX_FLAGS="-fpermissive -Wno-narrowing -fno-pie"
           -DCMAKE_C_FLAGS="-fno-pie"
 
+      - name: Compiler check
+        if: always()
+        run: |
+          grep -m1 -A3 'CMAKE_SIZEOF_VOID_P' build-linux/CMakeCache.txt || true
+          grep -A40 'Detecting C compiler ABI' build-linux/CMakeFiles/CMakeConfigureLog.yaml | grep -i -E 'error|fail|cannot|undefined' | head -20 || true
+
       - name: Build
         run: cmake --build build-linux --target Amnesia -j"$(nproc)"
 
@@ -71,7 +77,8 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="ci-${GITHUB_SHA::7}"; fi
           d="dist/amnesia-coop-$v-linux-x86_64"
           mkdir -p "$d/_coop/partner"
-          cp build-linux/game/Amnesia.bin.x86_64 "$d/Amnesia_coop.bin.x86_64"
+          bin=$(find build-linux -name Amnesia.bin.x86_64 -type f | head -1); test -n "$bin"
+          cp "$bin" "$d/Amnesia_coop.bin.x86_64"
           cp coop_data/partner/* "$d/_coop/partner/"
           cp amnesia/src/coop/coop.cfg.example build/package/INSTALL.txt CREDITS.md "$d/"
           cp LICENSE "$d/LICENSE.txt"
@@ -111,7 +118,8 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="ci-${GITHUB_SHA::7}"; fi
           d="dist/amnesia-coop-$v-macos-x86_64-experimental"
           mkdir -p "$d/_coop/partner"
-          cp -R build-macos/game/Amnesia.app "$d/Amnesia_coop.app"
+          app=$(find build-macos -name Amnesia.app -type d -prune | head -1); test -n "$app"
+          cp -R "$app" "$d/Amnesia_coop.app"
           cp coop_data/partner/* "$d/_coop/partner/"
           cp amnesia/src/coop/coop.cfg.example build/package/INSTALL.txt CREDITS.md "$d/"
           cp LICENSE "$d/LICENSE.txt"
