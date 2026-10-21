@@ -953,6 +953,7 @@ bool cLuxCoopNet::HostSteam(const tString& asName, bool abPublic)
 	mMode = eLuxCoopMode_Host;
 	mNetType = eLuxCoopNetType_Steam;
 	mpSteam->SetPublicLobby(abPublic);
+	mpSteam->SetLobbyOwnerName(msName);
 	SaveLobbySettings();
 	return StartNetwork();
 }

@@ -443,7 +443,8 @@ void cLuxCoopTransport_Steam::OnLobbyCreated(unsigned long long alLobby, bool ab
 	mlLobby = alLobby;
 	CSteamID lobbyId((uint64)alLobby);
 	SteamMatchmaking()->SetLobbyData(lobbyId, kSteamLobbyTagKey, cString::ToString(kCoopProtocolVersion).c_str());
-	SteamMatchmaking()->SetLobbyData(lobbyId, "name", (tString(SteamFriends()->GetPersonaName()) + "'s game").c_str());
+	tString sOwner = msLobbyOwnerName != "" ? msLobbyOwnerName : tString(SteamFriends()->GetPersonaName());
+	SteamMatchmaking()->SetLobbyData(lobbyId, "name", (sOwner + "'s game").c_str());
 	SteamMatchmaking()->SetLobbyJoinable(lobbyId, true);
 
 	msStatus = mbPublicLobby ?	"Public Steam lobby open. Waiting for someone to join, or press \"Invite friend\"." :

@@ -71,6 +71,8 @@ public:
 	void RunCallbacks();
 
 	void SetPublicLobby(bool abX){ mbPublicLobby = abX; }
+	//The lobby is named after the name typed in the co-op menu: the menu font has no glyphs for many Steam names
+	void SetLobbyOwnerName(const tString& asX){ msLobbyOwnerName = asX; }
 	bool GetPublicLobby(){ return mbPublicLobby; }
 
 	/////////////////////////
@@ -118,6 +120,7 @@ private:
 
 	bool mbHost;
 	bool mbPublicLobby;
+	tString msLobbyOwnerName;
 	unsigned long long mlLobby;
 	unsigned long long mlPeer;
 	bool mbPeerConnected;
