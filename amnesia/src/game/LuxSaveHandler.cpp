@@ -312,6 +312,68 @@ bool cLuxSaveHandler::AutoLoad(bool abResetProgressLogger)
 
 //-----------------------------------------------------------------------
 
+tWString cLuxSaveHandler::GetNewestSavePath()
+{
+	if(gpBase->msProfileSavePath==_W("")) return _W("");
+	if(mSaveHandlerThreadClass.IsRunning())
+		mSaveHandlerThreadClass.ProcessPendingSaves();
+
+	tWString sFile = GetNewestSaveFile(gpBase->msProfileSavePath);
+	if(sFile == _W("")) return _W("");
+	if(gpBase->mbHardMode && sFile.find(_W("HardMode")) == tWString::npos) return _W("");
+
+	return gpBase->msProfileSavePath + sFile;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxSaveHandler::LoadCoopGame(const tWString& asWorldFile, const tWString& asOwnFile)
+{
+	Log("-------- BEGIN CO-OP LOAD FROM %s ---------\n", cString::To8Char(asWorldFile).c_str());
+
+	cLuxSaveGame_SaveData *pSaveGame = hplNew(cLuxSaveGame_SaveData, ());
+	cSerializeClass::LoadFromFile(pSaveGame, asWorldFile);
+
+	//The world is the host's; what we carry is our own, from our own last save
+	if(asOwnFile != _W(""))
+	{
+		cLuxSaveGame_SaveData *pOwn = hplNew(cLuxSaveGame_SaveData, ());
+		if(cSerializeClass::LoadFromFile(pOwn, asOwnFile))
+		{
+			Log(" Own inventory and stats from %s (%d items)\n", cString::To8Char(asOwnFile).c_str(), (int)pOwn->mInventory.mvItems.Size());
+
+			pSaveGame->mInventory.mbDisabled = pOwn->mInventory.mbDisabled;
+			pSaveGame->mInventory.mlEquippedHandItem = pOwn->mInventory.mlEquippedHandItem;
+			pSaveGame->mInventory.mvItems.mvVector = pOwn->mInventory.mvItems.mvVector;
+
+			cLuxPlayer_SaveData &world = pSaveGame->mPlayer;
+			cLuxPlayer_SaveData &own = pOwn->mPlayer;
+			world.mfHealth = own.mfHealth;
+			world.mfSanity = own.mfSanity;
+			world.mfLampOil = own.mfLampOil;
+			world.mlCoins = own.mlCoins;
+			world.mlTinderboxes = own.mlTinderboxes;
+		}
+		else
+		{
+			Warning("Coop: could not read our own save '%s', using the host's inventory\n", cString::To8Char(asOwnFile).c_str());
+		}
+		if(pOwn->mpSavedMaps) hplDelete(pOwn->mpSavedMaps);
+		hplDelete(pOwn);
+	}
+	else
+	{
+		Log(" No save of our own, starting with the host's inventory\n");
+	}
+
+	LoadSaveGameData(pSaveGame);
+	hplDelete(pSaveGame);
+
+	Log("-------- END CO-OP LOAD ---------\n");
+}
+
+//-----------------------------------------------------------------------
+
 bool cLuxSaveHandler::SaveFileExists()
 {
 	if(gpBase->msProfileSavePath==_W("")) return false;

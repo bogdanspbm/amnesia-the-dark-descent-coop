@@ -27,7 +27,7 @@
 //----------------------------------------------
 
 //Both games must run the same version; it is checked in the handshake and tags Steam lobbies
-static const int kCoopProtocolVersion = 5;
+static const int kCoopProtocolVersion = 6;
 
 //----------------------------------------------
 

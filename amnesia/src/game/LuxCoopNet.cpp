@@ -38,6 +38,7 @@
 #include "LuxPlayerHelpers.h"
 #include "LuxCoopTransport_ENet.h"
 #include "LuxCoopTransport_Steam.h"
+#include "LuxSaveHandler.h"
 
 #include <string.h>
 #include <algorithm>
@@ -77,7 +78,12 @@ static const float kCoopBodySendInterval = 1.0f / 20.0f;
 static const int kCoopMaxBodiesPerTick = 60;			//Send budget: at 20 Hz about 40 KB/s with every body moving
 static const int kCoopMaxBodiesPerPacket = 30;			//36 bytes each when moving, keeps packets under the usual MTU
 static const int kCoopMaxBodiesPerEntity = 32;
-static const int kCoopBodyRestSends = 2;				//Times a body that stopped is sent flagged as resting
+static const int kCoopBodyRestSends = 2;
+
+static const int kCoopSaveChunkSize = 16*1024;
+static const int kCoopSaveChunksPerFrame = 2;			//About 2 MB/s at 60 fps, well under what Steam's send buffer holds
+static const int kCoopMaxSaveSize = 64*1024*1024;
+static const wchar_t* kCoopHostSaveFile = _W("coop_host_save.coopsav");	//Not *.sav, so the menu never lists it				//Times a body that stopped is sent flagged as resting
 static const float kCoopBodyAuditTime = 15.0f;			//Resting bodies are resent this rarely, in case all rest packets were lost
 static const float kCoopBodyDistFalloff = 1.0f / 8.0f;	//Priority halves 8 m from the partner
 static const float kCoopBodySnapDist = 0.6f;			//Farther off than this the body is placed, closer it is steered
@@ -149,6 +155,14 @@ float cLuxCoopBuffer::GetFloat()
 	float fX;
 	memcpy(&fX, &lX, sizeof(fX));
 	return fX;
+}
+
+bool cLuxCoopBuffer::GetBytes(unsigned char *apDest, size_t alSize)
+{
+	if(CanRead(alSize)==false) return false;
+	if(alSize > 0) memcpy(apDest, &mvData[mlReadPos], alSize);
+	mlReadPos += alSize;
+	return true;
 }
 
 tString cLuxCoopBuffer::GetString()
@@ -636,6 +650,9 @@ cLuxCoopNet::cLuxCoopNet() : iLuxUpdateable("LuxCoopNet")
 	mfPartnerLastStateTime = 0;
 	mvPartnerLastPos = 0;
 	mfEnemySendCount = 0;
+	mlSaveOutPos = 0;
+	mlSaveInReceived = 0;
+	mbContinuePending = false;
 }
 
 //-----------------------------------------------------------------------
@@ -997,15 +1014,174 @@ void cLuxCoopNet::Leave()
 
 void cLuxCoopNet::StartCoopGame()
 {
-	if(IsHost()==false || IsConnected()==false) return;
+	if(IsHost()==false || IsConnected()==false || mvSaveOut.empty()==false) return;
 
+	SendStartGame(eLuxCoopStartKind_NewGame);
+	StartLocalGame();
+}
+
+void cLuxCoopNet::SendStartGame(eLuxCoopStartKind aKind)
+{
 	cLuxCoopBuffer buffer;
 	buffer.AddByte(eLuxCoopMsg_StartGame);
 	buffer.AddByte(gpBase->mbHardMode ? 1 : 0);
+	buffer.AddByte((unsigned char)aKind);
 	Send(buffer, kCoopChannel_Reliable, true);
 	mpTransport->Flush();
+}
 
-	StartLocalGame();
+//-----------------------------------------------------------------------
+
+bool cLuxCoopNet::CanContinueCoopGame()
+{
+	return IsHost() && IsConnected() && mvSaveOut.empty() && gpBase->mpSaveHandler->SaveFileExists();
+}
+
+void cLuxCoopNet::ContinueCoopGame()
+{
+	if(CanContinueCoopGame()==false) return;
+
+	tWString sFile = gpBase->mpSaveHandler->GetNewestSavePath();
+	FILE *pFile = sFile != _W("") ? cPlatform::OpenFile(sFile, _W("rb")) : NULL;
+	if(pFile==NULL)
+	{
+		Error("Coop: could not open the save '%s' to send\n", cString::To8Char(sFile).c_str());
+		msLobbyNotice = "Could not read your newest save.";
+		return;
+	}
+	fseek(pFile, 0, SEEK_END);
+	long lSize = ftell(pFile);
+	fseek(pFile, 0, SEEK_SET);
+	if(lSize <= 0 || lSize > kCoopMaxSaveSize)
+	{
+		Error("Coop: save '%s' has an odd size (%ld bytes), not sending it\n", cString::To8Char(sFile).c_str(), lSize);
+		fclose(pFile);
+		return;
+	}
+	mvSaveOut.resize((size_t)lSize);
+	size_t lRead = fread(&mvSaveOut[0], 1, mvSaveOut.size(), pFile);
+	fclose(pFile);
+	if(lRead != mvSaveOut.size())
+	{
+		Error("Coop: could not read the save '%s'\n", cString::To8Char(sFile).c_str());
+		mvSaveOut.clear();
+		return;
+	}
+
+	Log("Coop: sending save '%s' (%d KB) to the partner\n", cString::To8Char(sFile).c_str(), (int)(mvSaveOut.size()/1024));
+	mlSaveOutPos = 0;
+	msLobbyNotice = "";
+}
+
+float cLuxCoopNet::GetSaveSendProgress()
+{
+	if(mvSaveOut.empty()) return -1;
+	return (float)mlSaveOutPos / (float)mvSaveOut.size();
+}
+
+void cLuxCoopNet::UpdateSaveSend()
+{
+	if(mvSaveOut.empty()) return;
+	if(IsConnected()==false)
+	{
+		Warning("Coop: partner left while the save was being sent\n");
+		mvSaveOut.clear();
+		return;
+	}
+
+	//A few chunks per frame, so a big save does not overflow the transport's send buffer
+	for(int i=0; i<kCoopSaveChunksPerFrame && mlSaveOutPos < mvSaveOut.size(); ++i)
+	{
+		int lChunk = (int)std::min(mvSaveOut.size() - mlSaveOutPos, (size_t)kCoopSaveChunkSize);
+
+		cLuxCoopBuffer buffer;
+		buffer.AddByte(eLuxCoopMsg_SaveChunk);
+		buffer.AddInt((int)mvSaveOut.size());
+		buffer.AddInt((int)mlSaveOutPos);
+		buffer.AddInt(lChunk);
+		buffer.AddBytes(&mvSaveOut[mlSaveOutPos], (size_t)lChunk);
+		Send(buffer, kCoopChannel_Reliable, true);
+
+		mlSaveOutPos += lChunk;
+	}
+
+	if(mlSaveOutPos < mvSaveOut.size()) return;
+
+	//Reliable messages arrive in order, so the client has the whole file before this
+	mvSaveOut.clear();
+	mlSaveOutPos = 0;
+	SendStartGame(eLuxCoopStartKind_Continue);
+
+	Log("Coop: save sent, continuing together\n");
+	gpBase->mpMainMenu->SetWindowActive(eLuxMainMenuWindow_LastEnum);
+	gpBase->mpMainMenu->ExitMenu(eLuxMainMenuExit_ContinueGame);
+}
+
+void cLuxCoopNet::HandleSaveChunk(cLuxCoopBuffer &aBuffer)
+{
+	int lTotal = aBuffer.GetInt();
+	int lOffset = aBuffer.GetInt();
+	int lChunk = aBuffer.GetInt();
+	if(aBuffer.HasReadError()) return;
+	if(lTotal <= 0 || lTotal > kCoopMaxSaveSize || lOffset < 0 || lChunk < 0 || lOffset + lChunk > lTotal)
+	{
+		Warning("Coop: bad save chunk (%d+%d of %d)\n", lOffset, lChunk, lTotal);
+		return;
+	}
+
+	if(lOffset == 0)
+	{
+		mvSaveIn.assign((size_t)lTotal, 0);
+		mlSaveInReceived = 0;
+	}
+	if(mvSaveIn.size() != (size_t)lTotal) return;	//Missed the start of this file
+
+	if(aBuffer.GetBytes(&mvSaveIn[lOffset], (size_t)lChunk)==false) return;
+	mlSaveInReceived += lChunk;
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxCoopNet::LoadContinueGame()
+{
+	if(mbContinuePending==false) return false;
+	mbContinuePending = false;
+
+	//The profile is set by now; the host's save goes next to our own saves, under a name the menu ignores
+	tWString sWorldFile = gpBase->msMainProfileSavePath + kCoopHostSaveFile;
+	FILE *pFile = cPlatform::OpenFile(sWorldFile, _W("wb"));
+	if(pFile==NULL)
+	{
+		Error("Coop: could not write the host's save to '%s'\n", cString::To8Char(sWorldFile).c_str());
+		mvSaveIn.clear();
+		return false;
+	}
+	size_t lWritten = fwrite(&mvSaveIn[0], 1, mvSaveIn.size(), pFile);
+	fclose(pFile);
+	bool bWritten = lWritten == mvSaveIn.size();
+	mvSaveIn.clear();
+	mlSaveInReceived = 0;
+	if(bWritten==false)
+	{
+		Error("Coop: could not write the host's save to '%s'\n", cString::To8Char(sWorldFile).c_str());
+		return false;
+	}
+
+	gpBase->mpSaveHandler->LoadCoopGame(sWorldFile, gpBase->mpSaveHandler->GetNewestSavePath());
+
+	//Both of us were saved where the host stood
+	StepAsideFromPartner();
+	return true;
+}
+
+void cLuxCoopNet::StepAsideFromPartner()
+{
+	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
+	if(pBody==NULL) return;
+
+	cVector3f vFeetPos = pBody->GetFeetPosition();
+	cVector3f vNewPos = AdjustStartPos(vFeetPos, pBody->GetYaw());
+	if(vNewPos != vFeetPos) pBody->SetFeetPosition(vNewPos);
 }
 
 //-----------------------------------------------------------------------
@@ -1079,6 +1255,8 @@ void cLuxCoopNet::Update(float afTimeStep)
 	}
 
 	mAvatar.Update(afTimeStep);
+
+	UpdateSaveSend();
 
 	if(mpTransport) mpTransport->Flush();
 }
@@ -1262,6 +1440,7 @@ void cLuxCoopNet::HandlePacket(cLuxCoopBuffer &buffer)
 	case eLuxCoopMsg_EnemySound:	if(mbHandshakeDone && IsHost()==false) HandleEnemySound(buffer); break;
 	case eLuxCoopMsg_Damage:		if(mbHandshakeDone) HandleDamage(buffer); break;
 	case eLuxCoopMsg_PropHealth:	if(mbHandshakeDone && IsHost()==false) HandlePropHealth(buffer); break;
+	case eLuxCoopMsg_SaveChunk:		if(mbHandshakeDone && IsHost()==false) HandleSaveChunk(buffer); break;
 	default:
 		Warning("Coop: unknown message type %d\n", lType);
 	}
@@ -1436,6 +1615,7 @@ void cLuxCoopNet::HandlePropHealth(cLuxCoopBuffer &aBuffer)
 void cLuxCoopNet::HandleStartGame(cLuxCoopBuffer &aBuffer)
 {
 	bool bHardMode = aBuffer.GetByte() != 0;
+	eLuxCoopStartKind kind = (eLuxCoopStartKind)aBuffer.GetByte();
 	if(aBuffer.HasReadError()) return;
 
 	if(gpBase->mpMapHandler->MapIsLoaded())
@@ -1444,8 +1624,24 @@ void cLuxCoopNet::HandleStartGame(cLuxCoopBuffer &aBuffer)
 		return;
 	}
 
-	Log("Coop: host started the game\n");
 	gpBase->mbHardMode = bHardMode;
+
+	if(kind == eLuxCoopStartKind_Continue)
+	{
+		if(mvSaveIn.empty() || mlSaveInReceived != mvSaveIn.size())
+		{
+			Error("Coop: host continued a saved game but its save did not arrive (%d of %d bytes)\n", (int)mlSaveInReceived, (int)mvSaveIn.size());
+			msLobbyNotice = "The host's save did not arrive. Ask the host to try again.";
+			return;
+		}
+		Log("Coop: host continued a saved game (%d KB)\n", (int)(mvSaveIn.size()/1024));
+		mbContinuePending = true;
+		gpBase->mpMainMenu->SetWindowActive(eLuxMainMenuWindow_LastEnum);
+		gpBase->mpMainMenu->ExitMenu(eLuxMainMenuExit_ContinueGame);
+		return;
+	}
+
+	Log("Coop: host started the game\n");
 	StartLocalGame();
 }
 

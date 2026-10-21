@@ -74,6 +74,14 @@ enum eLuxCoopMsg
 	eLuxCoopMsg_EnemySound,
 	eLuxCoopMsg_Damage,
 	eLuxCoopMsg_PropHealth,
+	eLuxCoopMsg_SaveChunk,
+};
+
+//What the host's StartGame message asks the client to do
+enum eLuxCoopStartKind
+{
+	eLuxCoopStartKind_NewGame,
+	eLuxCoopStartKind_Continue,	//Load the save the host just sent, with our own inventory
 };
 
 //----------------------------------------------
@@ -95,6 +103,7 @@ public:
 	void AddQuaternion(const cQuaternion& aqX){ AddFloat(aqX.w); AddFloat(aqX.v.x); AddFloat(aqX.v.y); AddFloat(aqX.v.z); }
 	void AddString(const tString& asX);
 	void AddBuffer(const cLuxCoopBuffer& aX){ mvData.insert(mvData.end(), aX.mvData.begin(), aX.mvData.end()); }
+	void AddBytes(const unsigned char *apData, size_t alSize){ mvData.insert(mvData.end(), apData, apData+alSize); }
 
 	unsigned char GetByte();
 	short GetShort(){ unsigned int lLow = GetByte(); unsigned int lHigh = GetByte(); return (short)(lLow | (lHigh << 8)); }
@@ -102,6 +111,7 @@ public:
 	float GetFloat();
 	cVector3f GetVector3f(){ float x = GetFloat(); float y = GetFloat(); float z = GetFloat(); return cVector3f(x,y,z); }
 	tString GetString();
+	bool GetBytes(unsigned char *apDest, size_t alSize);
 	cQuaternion GetQuaternion(){ float w = GetFloat(); cVector3f v = GetVector3f(); return cQuaternion(w, v.x, v.y, v.z); }
 
 	bool HasReadError(){ return mbReadError; }
@@ -324,6 +334,13 @@ public:
 	void Leave();
 	void StartCoopGame();
 
+	//Continue together: the host sends its newest save, the client loads it with its own inventory and stats
+	void ContinueCoopGame();
+	bool CanContinueCoopGame();
+	float GetSaveSendProgress();	//0-1 while the save is on its way, -1 otherwise
+	bool LoadContinueGame();		//Called by the menu's Continue; false means a normal load
+	const tString& GetLobbyNotice(){ return msLobbyNotice; }
+
 	//Steam lobbies; Steam is started the first time one of these is used
 	bool HostSteam(const tString& asName, bool abPublic);
 	bool JoinSteamLobby(const tString& asName, const tString& asLobbyId);
@@ -366,6 +383,10 @@ private:
 	void HandleEnemySound(cLuxCoopBuffer &aBuffer);
 	void HandleDamage(cLuxCoopBuffer &aBuffer);
 	void HandlePropHealth(cLuxCoopBuffer &aBuffer);
+	void HandleSaveChunk(cLuxCoopBuffer &aBuffer);
+	void UpdateSaveSend();
+	void SendStartGame(eLuxCoopStartKind aKind);
+	void StepAsideFromPartner();
 	void SendEnemyStates();
 
 	void UpdateDowned(float afTimeStep);
@@ -446,6 +467,13 @@ private:
 
 	tString msPartnerName;
 	tString msPartnerMap;
+
+	std::vector<unsigned char> mvSaveOut;	//Host: save file being sent
+	size_t mlSaveOutPos;
+	std::vector<unsigned char> mvSaveIn;	//Client: save file being received
+	size_t mlSaveInReceived;
+	bool mbContinuePending;
+	tString msLobbyNotice;
 
 	cLuxCoopAvatar mAvatar;
 };

@@ -64,6 +64,7 @@ private:
 	cWidgetButton *mpJoinButton;
 	cWidgetButton *mpLeaveButton;
 	cWidgetButton *mpStartButton;
+	cWidgetButton *mpContinueButton;
 
 	cWidgetButton *mpSteamPublicButton;
 	cWidgetButton *mpSteamFriendsButton;
@@ -104,6 +105,8 @@ private:
 
 	bool PressStart(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressStart);
+	bool PressContinue(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressContinue);
 
 	bool PressClose(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressClose);

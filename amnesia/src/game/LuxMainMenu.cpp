@@ -35,6 +35,7 @@
 #include "LuxMainMenu_KeyConfig.h"
 #include "LuxMainMenu_StartGame.h"
 #include "LuxMainMenu_Coop.h"
+#include "LuxCoopNet.h"
 #include "LuxMainMenu_LoadGame.h"
 #include "LuxMainMenu_CustomStory.h"
 
@@ -701,7 +702,9 @@ void cLuxMainMenu::OnMenuExit()
 			gpBase->mpEngine->GetUpdater()->SetContainer("Default");
 			gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
 
-			gpBase->mpSaveHandler->AutoLoad(true);
+			//Co-op client: the host's save with our own inventory
+			if(gpBase->mpCoopNet->LoadContinueGame()==false)
+				gpBase->mpSaveHandler->AutoLoad(true);
 		}
 		break;
 	////////////////

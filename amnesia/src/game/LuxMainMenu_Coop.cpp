@@ -167,6 +167,9 @@ void cLuxMainMenu_Coop::CreateGui()
 	mpStartButton = mpGuiSet->CreateWidgetButton(cVector3f(mvWindowSize.x - fBorderSize - fBottomWidth, vPos.y, 0.1f), cVector2f(fBottomWidth, 30), CoopText("Start", "Start game"), mpWindow);
 	mpStartButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressStart));
 
+	mpContinueButton = mpGuiSet->CreateWidgetButton(cVector3f((mvWindowSize.x - fBottomWidth)*0.5f, vPos.y, 0.1f), cVector2f(fBottomWidth, 30), CoopText("Continue", "Continue together"), mpWindow);
+	mpContinueButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressContinue));
+
 	UpdateStatus();
 }
 
@@ -210,7 +213,8 @@ void cLuxMainMenu_Coop::UpdateStatus()
 	}
 	else if(pNet->IsConnected())
 	{
-		if(pNet->IsHost())	sStatus = "Partner '" + pNet->GetPartnerName() + "' joined. Press \"Start game\" to begin together.";
+		if(pNet->GetSaveSendProgress() >= 0)	sStatus = "Sending your save to '" + pNet->GetPartnerName() + "': " + cString::ToString((int)(pNet->GetSaveSendProgress()*100)) + "%";
+		else if(pNet->IsHost())	sStatus = "Partner '" + pNet->GetPartnerName() + "' joined. Press \"Start game\" for a new game, or \"Continue together\" to load your newest save. Your partner keeps their own inventory.";
 		else				sStatus = "Connected to '" + pNet->GetPartnerName() + "'. Waiting for the host to start the game...";
 	}
 	else
@@ -219,6 +223,7 @@ void cLuxMainMenu_Coop::UpdateStatus()
 		if(sStatus == "") sStatus = pNet->IsHost() ? "Waiting for a partner..." : "Connecting...";
 	}
 
+	if(pNet->GetLobbyNotice() != "") sStatus += "\n" + pNet->GetLobbyNotice();
 	//Statuses carry Steam names, which are UTF-8
 	mpLStatus->SetText(cString::UTF8ToWChar(sStatus));
 
@@ -229,7 +234,8 @@ void cLuxMainMenu_Coop::UpdateStatus()
 	mpTextName->SetEnabled(bActive==false);
 	mpTextAddress->SetEnabled(bActive==false);
 	mpTextPort->SetEnabled(bActive==false);
-	mpStartButton->SetEnabled(pNet->IsHost() && pNet->IsConnected());
+	mpStartButton->SetEnabled(pNet->IsHost() && pNet->IsConnected() && pNet->GetSaveSendProgress() < 0);
+	mpContinueButton->SetEnabled(pNet->CanContinueCoopGame());
 
 	cLuxCoopTransport_Steam *pSteam = pNet->GetSteam();
 	mpSteamPublicButton->SetEnabled(bActive==false);
@@ -385,6 +391,14 @@ bool cLuxMainMenu_Coop::PressStart(iWidget* apWidget, const cGuiMessageData& aDa
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressStart);
+
+bool cLuxMainMenu_Coop::PressContinue(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	gpBase->mpCoopNet->ContinueCoopGame();
+	UpdateStatus();
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Coop, PressContinue);
 
 //-----------------------------------------------------------------------
 

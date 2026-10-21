@@ -70,6 +70,10 @@ public:
 	bool AutoSave();
 	bool AutoLoad(bool abResetProgressLogger);
 
+	//Co-op: the newest save (full path, "" if none), and loading the host's world with our own inventory and stats
+	tWString GetNewestSavePath();
+	void LoadCoopGame(const tWString& asWorldFile, const tWString& asOwnFile);
+
 	bool SaveFileExists();
 
 	//////////////////////
