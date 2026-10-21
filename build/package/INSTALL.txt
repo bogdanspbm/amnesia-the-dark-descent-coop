@@ -10,7 +10,7 @@ RU
 4. Запускайте Amnesia_coop.exe -> главное меню -> Co-op.
    Прямое подключение: хост жмёт "Host by IP", напарник вводит IP хоста и жмёт "Join by IP".
    Хосту нужно открыть UDP 27960 (брандмауэр/роутер) или использовать Radmin VPN / ZeroTier / Tailscale.
-5. Steam-лобби (необязательно): положите steam_api.dll из Steamworks SDK в _coop\steam\ (см. README.txt там).
+5. Steam-лобби работают сразу: нужен только запущенный Steam у обоих (в Steam будет видно "Spacewar", AppID 480).
 
 Полная инструкция: https://github.com/bogdanspbm/amnesia-the-dark-descent-coop/blob/main/docs/NETWORK_PLAY.md
 
@@ -23,7 +23,7 @@ EN
 4. Run Amnesia_coop.exe -> main menu -> Co-op.
    Direct IP: the host presses "Host by IP", the partner types the host's IP and presses "Join by IP".
    The host must allow UDP 27960 (firewall/router) or use Radmin VPN / ZeroTier / Tailscale.
-5. Steam lobbies (optional): put steam_api.dll from the Steamworks SDK into _coop\steam\ (see the README.txt there).
+5. Steam lobbies work out of the box: both players just need Steam running (Steam shows "Spacewar", AppID 480).
 
 Full guide: https://github.com/bogdanspbm/amnesia-the-dark-descent-coop/blob/main/docs/NETWORK_PLAY.md
 

@@ -43,7 +43,7 @@
 
 - Кампания проходится вдвоём по прямому IP; основное тестирование — две копии игры на одном ПК.
 - **Steam-лобби** работают через тестовый AppID 480 (Spacewar); полноценный тест двумя людьми на разных машинах
-  через Steam ещё предстоит. Для Steam нужен `steam_api.dll` из Steamworks SDK (не входит в релиз).
+  через Steam ещё предстоит. Нужный `steam_api.dll` (Steamworks SDK 1.65) уже входит в Windows-релиз.
 - **Linux и macOS** сборки собираются CI, но **не тестировались** в игре. macOS — экспериментально.
 - Скриптовые сцены игры рассчитаны на одного игрока, поэтому в отдельных катсценах и триггерах возможны
   шероховатости. Совместное продолжение — с сохранения хоста (Continue together).
@@ -61,11 +61,13 @@
 
 ### Сборка из исходников
 
+Подробно (Visual Studio, Steamworks SDK, Linux/macOS, частые ошибки): **[docs/BUILDING.md](docs/BUILDING.md)**.
+
 **Windows** (Visual Studio 2022 / Build Tools с C++, Windows 10/11 SDK):
 
 ```powershell
 .\build\build_windows.ps1                                        # без Steam (только прямой IP)
-.\build\build_windows.ps1 -SteamworksSdk C:\SteamworksSDK\sdk    # со Steam-лобби
+.\build\build_windows.ps1 -SteamworksSdk C:\SteamworksSDK\sdk    # со Steam-лобби (нужен свой Steamworks SDK)
 ```
 
 Результат — `amnesia\redist\Amnesia.exe`; скопируйте его в папку игры как `Amnesia_coop.exe`, а
@@ -125,7 +127,7 @@ Steam-лобби в CMake включаются через `-DSTEAMWORKS_SDK_DIR=
 
 - The campaign is playable by two over direct IP; most testing so far ran two game instances on one PC.
 - **Steam lobbies** use the test AppID 480 (Spacewar); a real two-person test over Steam on separate machines is
-  still pending. Steam needs `steam_api.dll` from the Steamworks SDK (not shipped in the release).
+  still pending. The required `steam_api.dll` (Steamworks SDK 1.65) ships with the Windows release.
 - **Linux and macOS** builds are produced by CI but are **untested** in game; macOS is experimental.
 - The game's scripted events were made for one player, so some cutscenes and triggers may behave oddly in co-op.
   Continuing together uses the host's save.
@@ -137,6 +139,8 @@ Extract the release zip into the game folder and run `Amnesia_coop.exe`. Full gu
 Steam, troubleshooting): **[docs/NETWORK_PLAY.md](docs/NETWORK_PLAY.md#english)**.
 
 ### Build from source
+
+Full guide (Visual Studio, Steamworks SDK, Linux/macOS, common errors): **[docs/BUILDING.md](docs/BUILDING.md#english)**.
 
 Windows: `.\build\build_windows.ps1` (add `-SteamworksSdk <sdk folder>` for Steam lobbies) with Visual Studio 2022
 (C++ workload) and a Windows 10/11 SDK; output `amnesia\redist\Amnesia.exe` → copy as `Amnesia_coop.exe`, and

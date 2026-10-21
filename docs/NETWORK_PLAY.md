@@ -24,7 +24,7 @@
    Amnesia_coop.exe          ← запускать этот файл
    coop.cfg.example          ← пример настроек
    _coop\partner\...         ← модель напарника
-   _coop\steam\README.txt    ← сюда кладётся steam_api.dll для Steam-лобби (необязательно)
+   _coop\steam\steam_api.dll ← Steamworks SDK 1.65, для Steam-лобби
    ```
 3. Запускайте **`Amnesia_coop.exe`** напрямую (не через кнопку «Играть» в Steam). Обычный `Amnesia.exe` остаётся
    нетронутым, одиночная игра работает как раньше.
@@ -84,10 +84,10 @@
 Сейчас лобби работают через тестовое приложение Valve **Spacewar (AppID 480)** — у мода нет своего AppID. Поэтому:
 - у **обоих** должен быть запущен Steam (в сети);
 - в Steam вы будете отображаться как играющие в «Spacewar» — это нормально;
-- нужен файл **`steam_api.dll` из Steamworks SDK** (версия игры слишком старая). Он не входит в релиз:
-  скачайте Steamworks SDK на https://partner.steamgames.com/downloads/list (нужен вход в Steam) и скопируйте
-  `sdk\redistributable_bin\steam_api.dll` в `<папка игры>\_coop\steam\`. Без него Steam-кнопки покажут
-  «Steam support files are missing», а прямое подключение по IP работает как обычно.
+- нужный `steam_api.dll` (из Steamworks SDK 1.65; у самой игры он слишком старый) уже лежит в релизе в
+  `_coop\steam\` — ничего докачивать не надо. Если его удалить, Steam-кнопки покажут
+  «Steam support files are missing», а прямое подключение по IP продолжит работать.
+  При сборке из исходников со Steam нужен свой Steamworks SDK: https://partner.steamgames.com/downloads/list
 
 **Хост:** Co-op → **Host for friends** (или **Host public lobby**) → **Invite friend** → выберите друга в оверлее.
 **Друг:** принимает приглашение в Steam (или «Присоединиться к игре» в списке друзей), пока `Amnesia_coop.exe`
@@ -161,7 +161,7 @@
    Amnesia_coop.exe          ← run this
    coop.cfg.example
    _coop\partner\...         ← the partner model
-   _coop\steam\README.txt    ← put steam_api.dll here for Steam lobbies (optional)
+   _coop\steam\steam_api.dll ← Steamworks SDK 1.65, for Steam lobbies
    ```
 3. Start **`Amnesia_coop.exe`** directly (not with Steam's Play button). `Amnesia.exe` stays untouched.
 
@@ -201,10 +201,9 @@ on my.zerotier.com) or **Tailscale** (`100.x.x.x`), then Host/Join by IP using t
 
 Lobbies currently run under Valve's **Spacewar test app (AppID 480)**, because the mod has no AppID of its own:
 - both players need Steam running and online; Steam shows you as playing "Spacewar";
-- you need **`steam_api.dll` from the Steamworks SDK** (the game's own copy is too old). It is not in the release:
-  download the SDK from https://partner.steamgames.com/downloads/list (Steam login required) and copy
-  `sdk\redistributable_bin\steam_api.dll` to `<game>\_coop\steam\`. Without it the Steam buttons report
-  "Steam support files are missing"; direct IP still works.
+- the required `steam_api.dll` (Steamworks SDK 1.65; the game's own copy is too old) ships in the release in
+  `_coop\steam\`, nothing to download. Building from source with Steam needs your own copy of the SDK
+  (https://partner.steamgames.com/downloads/list).
 
 **Host:** Co-op → **Host for friends** (or **Host public lobby**) → **Invite friend**.
 **Friend:** accept the Steam invite (or "Join game" in the friends list) while `Amnesia_coop.exe` is in the menu,

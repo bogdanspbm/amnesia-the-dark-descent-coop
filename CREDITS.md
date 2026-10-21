@@ -9,8 +9,9 @@
 | ENet (`amnesia/src/coop/enet/`) | Lee Salzman | MIT (see `amnesia/src/coop/enet/LICENSE`) |
 | Prebuilt engine dependencies (`HPL2/dependencies.zip`: SDL2, OpenAL, Newton, AngelScript, DevIL, GLEW, Ogg/Vorbis/Theora, FLTK, ...) | their respective authors, as shipped by Frictional Games | their own licenses |
 
-Steam lobbies use the Steamworks API. The Steamworks SDK is **not** part of this repository or the releases; it is
-downloaded separately from Valve (see `docs/NETWORK_PLAY.md`).
+Steam lobbies use the Steamworks API. The Steamworks SDK is **not** part of this repository; the Windows release
+zip ships only its redistributable `steam_api.dll` (© Valve Corporation, redistributed under the Steamworks SDK terms).
+Building with Steam support needs your own copy of the SDK.
 
 ## Partner model (`coop_data/partner/`)
 

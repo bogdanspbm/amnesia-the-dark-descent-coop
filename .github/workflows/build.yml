@@ -138,7 +138,7 @@ jobs:
           body: |
             Two-player co-op for Amnesia: The Dark Descent. **You need your own copy of the game**; no game files are included.
 
-            - `*-windows.zip` (if attached): Windows build with Steam lobbies, built and tested on Windows.
+            - `*-windows.zip` (if attached): Windows build with Steam lobbies (steam_api.dll included), built and tested on Windows.
             - `*-windows-nosteam.zip`: Windows CI build, direct IP only.
             - `*-linux-x86_64.tar.gz`: Linux CI build, **untested**.
             - `*-macos-*-experimental.tar.gz`: macOS CI build, **experimental, untested** (only if it built).
